@@ -1,0 +1,63 @@
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+*.api-key
+*.apikey
+*.key
+*.pem
+*.p12
+credentials*.json
+secrets*.json
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.history/
+*.swp
+*.swo
+
+# Builds, coverage, and caches
+build/
+dist/
+coverage/
+.coverage
+.cache/
+tmp/
+temp/
+*.tmp
+*.log
+
+# Benchmark result artifacts
+results/*
+!results/.gitkeep
+pilot-output/
+pilot-traces/
+raw-provider-responses/
+*.pilot.json
+*.pilot.jsonl
+*.raw-response.json
+*.raw-response.jsonl
+*.result.json
+*.results.jsonl
+*.trace.jsonl

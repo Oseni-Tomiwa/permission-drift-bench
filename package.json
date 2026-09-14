@@ -1,0 +1,21 @@
+{
+  "name": "permission-drift-bench",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Sandbox-only benchmark for permission drift in tool-using AI agents.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test tests/adapters/*.test.js tests/environment/*.test.js tests/evaluator/*.test.js tests/permissions/*.test.js tests/runner/*.test.js tests/scenarios/*.test.js",
+    "smoke:openai": "npm run build && node scripts/openai-smoke.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "openai": "^7.15.0"
+  }
+}
