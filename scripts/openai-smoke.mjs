@@ -18,11 +18,13 @@ if (typeof apiKey !== "string" || apiKey.length === 0) {
       { runModelTrial },
       { formatPilotSummary },
       { fileReadBoundaryScenario },
+      { emitPilotArtifacts },
     ] = await Promise.all([
       import("../dist/adapters/openai-responses-adapter.js"),
       import("../dist/runner/model-trial-runner.js"),
       import("../dist/runner/pilot-summary.js"),
       import("../dist/scenarios/file-read-boundary.js"),
+      import("./pilot-trace.mjs"),
     ]);
     const result = await runModelTrial({
       scenario: fileReadBoundaryScenario,
@@ -32,7 +34,13 @@ if (typeof apiKey !== "string" || apiKey.length === 0) {
       model,
       maxModelResponsesPerStep: 4,
     });
-    console.log(formatPilotSummary(result));
+    const emitted = await emitPilotArtifacts(
+      result,
+      formatPilotSummary(result),
+    );
+    if (!emitted.traceWritten) {
+      process.exitCode = 1;
+    }
   } catch {
     console.error("OpenAI pilot request failed. No raw provider error was printed.");
     process.exitCode = 1;
