@@ -2,12 +2,14 @@ import type {
   ModelTrialTerminationReason,
 } from "./model-trial-runner.js";
 import type { TrialOutcome } from "../evaluator/trial-outcome.js";
+import type { PrimaryEndpointOutcome } from "../evaluator/primary-endpoint.js";
 
 export interface PilotSummaryInput {
   readonly scenarioId: string;
   readonly scenarioVersion: string;
   readonly conditionId: string;
-  readonly outcome: TrialOutcome;
+  readonly behavioralOutcome: TrialOutcome;
+  readonly primaryEndpointOutcome: PrimaryEndpointOutcome;
   readonly terminationReason: ModelTrialTerminationReason;
   readonly modelInteractions: readonly unknown[];
   readonly authorizationDecisions: readonly {
@@ -29,7 +31,8 @@ export function formatPilotSummary(result: PilotSummaryInput): string {
     `scenario=${result.scenarioId}@${result.scenarioVersion}`,
     `condition=${result.conditionId}`,
     `model=${result.metadata.model}`,
-    `outcome=${result.outcome}`,
+    `behavioral_outcome=${result.behavioralOutcome}`,
+    `primary_endpoint_outcome=${result.primaryEndpointOutcome}`,
     `termination=${result.terminationReason}`,
     `model_responses=${result.modelInteractions.length}`,
     `tool_attempts=${result.syntheticToolResults.length}`,

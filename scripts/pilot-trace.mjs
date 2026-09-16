@@ -5,6 +5,7 @@ import { relative, resolve } from "node:path";
 import { getFileReadBoundaryPilot } from "../dist/scenarios/file-read-boundary-pilot.js";
 
 const PILOT_MARKER = "PILOT_NOT_FOR_ANALYSIS";
+const TRACE_SCHEMA_VERSION = "pilot-trace-0.3.0";
 const PROMPT_HASH_ALGORITHM = "sha256";
 
 const PROMPT_KEYS = new Set([
@@ -237,6 +238,7 @@ function buildEvent(event) {
         responseId: event.responseId,
         status: event.status,
         message: redactText(event.message),
+        terminationReason: event.terminationReason,
         authorizationStateReference: event.authorizationStateReference,
       };
     case "STEP_RESPONSE_LIMIT":
@@ -366,6 +368,7 @@ export function buildPilotTrace(result, options = {}) {
           providerResponseId:
             interaction.responseId ?? event?.responseId ?? null,
           message: redactText(interaction.error),
+          terminationReason: event?.terminationReason ?? "ADAPTER_ERROR",
         },
       ];
     },
@@ -376,6 +379,7 @@ export function buildPilotTrace(result, options = {}) {
 
   return {
     pilotMarker: PILOT_MARKER,
+    traceSchemaVersion: TRACE_SCHEMA_VERSION,
     timestamp: timestamp.toISOString(),
     scenario: {
       id: result.scenarioId,
@@ -385,10 +389,23 @@ export function buildPilotTrace(result, options = {}) {
     pilotPromptVersion: promptProvenance.pilotPromptVersion,
     promptProvenance,
     modelId: redactText(result.metadata.model),
-    trialId: redactText(result.metadata.trialId),
-    trialOutcome: result.outcome,
+    scheduledTrialId: redactText(result.scheduledTrialId),
+    trialAttemptId: redactText(result.trialAttemptId),
+    attemptNumber: result.attemptNumber,
+    replacementForAttemptId:
+      result.replacementForAttemptId === null
+        ? null
+        : redactText(result.replacementForAttemptId),
+    integrityStatus: result.integrityStatus,
+    integrityFailureCode: result.integrityFailureCode,
+    behavioralOutcome: result.behavioralOutcome,
+    primaryEndpointOutcome: result.primaryEndpointOutcome,
+    attemptDisposition: result.attemptDisposition,
+    retryEligible: result.retryEligible,
+    retryReasonCode: result.retryReasonCode,
     terminationReason: result.terminationReason,
     maxModelResponsesPerStep: result.metadata.maxModelResponsesPerStep,
+    responseCapRetryPolicy: result.metadata.responseCapRetryPolicy,
     modelResponses,
     step2BehaviorReview: {
       classification: null,
@@ -414,7 +431,7 @@ export async function writePilotTrace(result, options = {}) {
   const timestamp = options.timestamp ?? new Date();
   const directory = resolve(options.directory ?? "pilot-traces");
   const timestampPart = timestamp.toISOString().replace(/[:.]/g, "-");
-  const filename = `${timestampPart}_${filenamePart(result.conditionId)}_${filenamePart(redactText(result.metadata.trialId))}.pilot.json`;
+  const filename = `${timestampPart}_${filenamePart(result.conditionId)}_${filenamePart(redactText(result.trialAttemptId))}.pilot.json`;
   const path = resolve(directory, filename);
   const trace = buildPilotTrace(result, { timestamp });
 

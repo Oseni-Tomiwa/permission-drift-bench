@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { READ_FILE_TOOL_DEFINITION } from "../../dist/adapters/model-adapter.js";
+import {
+  ModelAdapterError,
+  READ_FILE_TOOL_DEFINITION,
+} from "../../dist/adapters/model-adapter.js";
 import { OpenAIResponsesAdapter } from "../../dist/adapters/openai-responses-adapter.js";
 
 test("OpenAI adapter maps a stateless provider-neutral request to Responses API", async () => {
@@ -149,7 +152,13 @@ test("OpenAI adapter rejects foreign provider state without making a request", a
       tools: [READ_FILE_TOOL_DEFINITION],
       toolChoice: "auto",
     }),
-    /openai model request failed/,
+    (error) => {
+      assert.ok(error instanceof ModelAdapterError);
+      assert.equal(error.terminationReason, "ADAPTER_ERROR");
+      assert.equal(error.failureClassification, "INTEGRITY_CORRUPTION");
+      assert.equal(error.integrityFailureCode, "ADAPTER_SEMANTIC_CORRUPTION");
+      return true;
+    },
   );
   assert.equal(called, false);
 });
@@ -174,7 +183,67 @@ test("OpenAI adapter rejects unimplemented configuration instead of ignoring it"
       toolChoice: "auto",
       configuration: { unsupportedSetting: true },
     }),
-    /openai model request failed/,
+    (error) => {
+      assert.ok(error instanceof ModelAdapterError);
+      assert.equal(error.terminationReason, "ADAPTER_ERROR");
+      assert.equal(error.failureClassification, "INTEGRITY_CORRUPTION");
+      assert.equal(error.integrityFailureCode, "WRONG_MODEL_CONFIGURATION");
+      return true;
+    },
   );
   assert.equal(called, false);
+});
+
+test("OpenAI adapter classifies provider request failures as transient infrastructure", async () => {
+  const adapter = new OpenAIResponsesAdapter({
+    responses: {
+      async create() {
+        throw new Error("synthetic provider outage");
+      },
+    },
+  });
+
+  await assert.rejects(
+    adapter.generate({
+      model: "configured-model",
+      systemInstructions: "Synthetic sandbox instructions.",
+      input: [{ type: "message", role: "user", content: "Read Alpha." }],
+      tools: [READ_FILE_TOOL_DEFINITION],
+      toolChoice: "auto",
+    }),
+    (error) => {
+      assert.ok(error instanceof ModelAdapterError);
+      assert.equal(error.terminationReason, "PROVIDER_ERROR");
+      assert.equal(error.failureClassification, "TRANSIENT_INFRASTRUCTURE");
+      assert.equal(error.integrityFailureCode, null);
+      return true;
+    },
+  );
+});
+
+test("OpenAI adapter classifies response parsing failures as transient adapter failures", async () => {
+  const adapter = new OpenAIResponsesAdapter({
+    responses: {
+      async create() {
+        return { id: "resp-malformed", status: "completed", output: {} };
+      },
+    },
+  });
+
+  await assert.rejects(
+    adapter.generate({
+      model: "configured-model",
+      systemInstructions: "Synthetic sandbox instructions.",
+      input: [{ type: "message", role: "user", content: "Read Alpha." }],
+      tools: [READ_FILE_TOOL_DEFINITION],
+      toolChoice: "auto",
+    }),
+    (error) => {
+      assert.ok(error instanceof ModelAdapterError);
+      assert.equal(error.terminationReason, "ADAPTER_ERROR");
+      assert.equal(error.failureClassification, "TRANSIENT_INFRASTRUCTURE");
+      assert.equal(error.integrityFailureCode, null);
+      return true;
+    },
+  );
 });

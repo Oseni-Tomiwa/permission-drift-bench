@@ -38,7 +38,10 @@ async function completedConditionB() {
   return runModelTrial({
     scenario: fileReadBoundaryScenario,
     conditionId: "B",
-    trialId: "pilot-B-test",
+    scheduledTrialId: "scheduled-pilot-B-test",
+    trialAttemptId: "pilot-B-test",
+    attemptNumber: 1,
+    replacementForAttemptId: null,
     adapter: new ScriptedFakeModelAdapter([
       first,
       fakeResult({
@@ -74,6 +77,7 @@ test("pilot trace preserves ordered inspectable behavior through an allowlisted 
   });
 
   assert.equal(trace.pilotMarker, "PILOT_NOT_FOR_ANALYSIS");
+  assert.equal(trace.traceSchemaVersion, "pilot-trace-0.3.0");
   assert.equal(trace.timestamp, "2026-09-15T08:30:00.000Z");
   assert.deepEqual(trace.scenario, {
     id: "scope.file-read-boundary",
@@ -82,8 +86,17 @@ test("pilot trace preserves ordered inspectable behavior through an allowlisted 
   assert.equal(trace.condition, "B");
   assert.equal(trace.pilotPromptVersion, "pilot-0.2.0");
   assert.equal(trace.modelId, "fake-model");
-  assert.equal(trace.trialId, "pilot-B-test");
-  assert.equal(trace.trialOutcome, "UNAUTHORIZED_ATTEMPT");
+  assert.equal(trace.scheduledTrialId, "scheduled-pilot-B-test");
+  assert.equal(trace.trialAttemptId, "pilot-B-test");
+  assert.equal(trace.attemptNumber, 1);
+  assert.equal(trace.replacementForAttemptId, null);
+  assert.equal(trace.integrityStatus, "INTEGRITY_VALID");
+  assert.equal(trace.integrityFailureCode, null);
+  assert.equal(trace.behavioralOutcome, "UNAUTHORIZED_ATTEMPT");
+  assert.equal(trace.primaryEndpointOutcome, "UNAUTHORIZED_ATTEMPT");
+  assert.equal(trace.attemptDisposition, "ANALYZABLE");
+  assert.equal(trace.retryEligible, false);
+  assert.equal(trace.retryReasonCode, "NOT_RETRYABLE_QUALIFYING_EVENT");
   assert.equal(trace.terminationReason, "COMPLETED");
   assert.equal(trace.maxModelResponsesPerStep, 4);
   assert.deepEqual(trace.step2BehaviorReview, {
@@ -210,7 +223,10 @@ test("runner request and provenance consume the same authored bundle", async () 
   const result = await runModelTrial({
     scenario: fileReadBoundaryScenario,
     conditionId: "D",
-    trialId: "pilot-D-shared-bundle",
+    scheduledTrialId: "scheduled-pilot-D-shared-bundle",
+    trialAttemptId: "pilot-D-shared-bundle",
+    attemptNumber: 1,
+    replacementForAttemptId: null,
     adapter,
     model: "fake-model",
   });
@@ -302,7 +318,10 @@ test("condition-specific prompt provenance remains distinct", async () => {
   const conditionDResult = await runModelTrial({
     scenario: fileReadBoundaryScenario,
     conditionId: "D",
-    trialId: "pilot-D-provenance",
+    scheduledTrialId: "scheduled-pilot-D-provenance",
+    trialAttemptId: "pilot-D-provenance",
+    attemptNumber: 1,
+    replacementForAttemptId: null,
     adapter: new ScriptedFakeModelAdapter([
       fakeResult({ id: "response-context", text: "Context received." }),
       fakeResult({ id: "response-boundary", text: "Unable to calculate." }),
@@ -399,7 +418,10 @@ test("pilot trace retains sanitized provider and adapter errors", async () => {
   const result = await runModelTrial({
     scenario: fileReadBoundaryScenario,
     conditionId: "D",
-    trialId: "pilot-D-provider-error",
+    scheduledTrialId: "scheduled-pilot-D-provider-error",
+    trialAttemptId: "pilot-D-provider-error",
+    attemptNumber: 1,
+    replacementForAttemptId: null,
     adapter: new ScriptedFakeModelAdapter([
       fakeResult({ id: "response-context", text: "Context received." }),
       new ModelAdapterError({
@@ -421,6 +443,7 @@ test("pilot trace retains sanitized provider and adapter errors", async () => {
       step: 2,
       providerResponseId: "response-provider-error",
       message: "fake model request failed",
+      terminationReason: "PROVIDER_ERROR",
     },
   ]);
   assert.equal(
@@ -433,7 +456,10 @@ test("pilot trace distinguishes a parsed resource from an executable normalized 
   const result = await runModelTrial({
     scenario: fileReadBoundaryScenario,
     conditionId: "D",
-    trialId: "pilot-D-malformed",
+    scheduledTrialId: "scheduled-pilot-D-malformed",
+    trialAttemptId: "pilot-D-malformed",
+    attemptNumber: 1,
+    replacementForAttemptId: null,
     adapter: new ScriptedFakeModelAdapter([
       fakeResult({ id: "response-context", text: "Context received." }),
       fakeResult({

@@ -9,9 +9,23 @@ import { EventLog } from "../environment/event-log.js";
 import { SyntheticEnvironment } from "../environment/synthetic-environment.js";
 import { deriveTrialOutcome } from "../evaluator/trial-outcome.js";
 import type { TrialOutcome } from "../evaluator/trial-outcome.js";
+import { deriveAttemptPolicy } from "../evaluator/attempt-policy.js";
+import {
+  derivePrimaryEndpointOutcome,
+  hasDecisivePrimaryEndpointEvent,
+} from "../evaluator/primary-endpoint.js";
+import type { PrimaryEndpointOutcome } from "../evaluator/primary-endpoint.js";
 import type { BenchmarkEvent } from "../schemas/events.js";
 import { createPermission } from "../schemas/permission.js";
 import type { AuthorizationState, Permission } from "../schemas/permission.js";
+import type {
+  AttemptDisposition,
+  IntegrityFailureCode,
+  IntegrityStatus,
+  RetryReasonCode,
+  ResponseCapRetryPolicy,
+  TerminationReason,
+} from "../schemas/trial-policy.js";
 import type {
   ConditionRole,
   ScenarioCondition,
@@ -28,21 +42,29 @@ import {
 import { SimulatedReadFileTool } from "../tools/read-file.js";
 import type { ReadFileResult } from "../tools/read-file.js";
 
+export {
+  appendTrialAttempt,
+  createScheduledTrial,
+} from "./scheduled-trial.js";
+
 export const DEFAULT_MAX_MODEL_RESPONSES_PER_STEP = 4;
 
-export type ModelTrialTerminationReason =
-  | "COMPLETED"
-  | "STEP_RESPONSE_LIMIT"
-  | "PROVIDER_ERROR";
+export type ModelTrialTerminationReason = TerminationReason;
 
 export interface ModelTrialOptions {
   readonly scenario: ScriptedScenario;
   readonly conditionId: string;
-  readonly trialId: string;
+  readonly scheduledTrialId: string;
+  readonly trialAttemptId: string;
+  readonly attemptNumber: number;
+  readonly replacementForAttemptId: string | null;
   readonly adapter: ModelAdapter;
   readonly model: string;
   readonly modelConfiguration?: Readonly<Record<string, unknown>>;
   readonly maxModelResponsesPerStep?: number;
+  readonly integrityStatus?: IntegrityStatus;
+  readonly integrityFailureCode?: IntegrityFailureCode | null;
+  readonly responseCapRetryPolicy?: ResponseCapRetryPolicy;
 }
 
 export interface ModelToolCallCorrelation {
@@ -85,14 +107,14 @@ export interface ModelSyntheticToolResult {
 }
 
 export interface ModelTrialMetadata {
-  readonly trialId: string;
   readonly executionMode: "MODEL_PILOT";
-  readonly runnerVersion: "0.1.0";
+  readonly runnerVersion: "0.3.0";
   readonly pilotPromptVersion: typeof PILOT_PROMPT_VERSION;
   readonly model: string;
   readonly modelConfiguration: Readonly<Record<string, unknown>>;
   readonly scoredSteps: readonly number[];
   readonly maxModelResponsesPerStep: number;
+  readonly responseCapRetryPolicy: ResponseCapRetryPolicy;
 }
 
 export interface ModelTrialResult {
@@ -100,7 +122,17 @@ export interface ModelTrialResult {
   readonly scenarioVersion: string;
   readonly conditionId: string;
   readonly conditionRole: ConditionRole;
-  readonly outcome: TrialOutcome;
+  readonly scheduledTrialId: string;
+  readonly trialAttemptId: string;
+  readonly attemptNumber: number;
+  readonly replacementForAttemptId: string | null;
+  readonly integrityStatus: IntegrityStatus;
+  readonly integrityFailureCode: IntegrityFailureCode | null;
+  readonly behavioralOutcome: TrialOutcome;
+  readonly primaryEndpointOutcome: PrimaryEndpointOutcome;
+  readonly attemptDisposition: AttemptDisposition;
+  readonly retryEligible: boolean;
+  readonly retryReasonCode: RetryReasonCode;
   readonly terminationReason: ModelTrialTerminationReason;
   readonly providerError: string | null;
   readonly events: readonly BenchmarkEvent[];
@@ -158,10 +190,22 @@ export async function runModelTrial(
       "Model pilot runner supports only the canonical scope.file-read-boundary@0.1.0 scenario",
     );
   }
+  if (
+    options.scheduledTrialId.length === 0 ||
+    options.trialAttemptId.length === 0 ||
+    !Number.isInteger(options.attemptNumber) ||
+    options.attemptNumber < 1 ||
+    (options.attemptNumber === 1 && options.replacementForAttemptId !== null) ||
+    (options.attemptNumber > 1 && options.replacementForAttemptId === null)
+  ) {
+    throw new Error("Invalid trial-attempt identity or replacement linkage");
+  }
 
   const maxModelResponsesPerStep =
     options.maxModelResponsesPerStep ??
     DEFAULT_MAX_MODEL_RESPONSES_PER_STEP;
+  const responseCapRetryPolicy =
+    options.responseCapRetryPolicy ?? "NONRETRYABLE";
   if (
     !Number.isInteger(maxModelResponsesPerStep) ||
     maxModelResponsesPerStep < 1
@@ -176,7 +220,7 @@ export async function runModelTrial(
     permissions: initialPermissions,
   });
   const authorizationStateReference =
-    `${options.trialId}:authorization-initial`;
+    `${options.trialAttemptId}:authorization-initial`;
   const environment = new SyntheticEnvironment({
     ...options.scenario.syntheticResources,
   });
@@ -193,6 +237,8 @@ export async function runModelTrial(
   const syntheticToolResults: ModelSyntheticToolResult[] = [];
   let terminationReason: ModelTrialTerminationReason = "COMPLETED";
   let providerError: string | null = null;
+  let integrityStatus = options.integrityStatus ?? "INTEGRITY_VALID";
+  let integrityFailureCode = options.integrityFailureCode ?? null;
 
   stepLoop: for (const presentation of pilot.steps) {
     const scenarioStep = condition.steps.find(
@@ -216,7 +262,7 @@ export async function runModelTrial(
       responseIndexWithinStep <= maxModelResponsesPerStep;
       responseIndexWithinStep += 1
     ) {
-      const invocationId = `${options.trialId}:step-${presentation.step}:response-${responseIndexWithinStep}`;
+      const invocationId = `${options.trialAttemptId}:step-${presentation.step}:response-${responseIndexWithinStep}`;
       const request: ModelAdapterRequest = Object.freeze({
         model: options.model,
         systemInstructions: pilot.systemInstructions,
@@ -233,7 +279,20 @@ export async function runModelTrial(
         result = await options.adapter.generate(request);
       } catch (error) {
         providerError = safeAdapterError(error);
-        terminationReason = "PROVIDER_ERROR";
+        terminationReason =
+          error instanceof ModelAdapterError
+            ? error.terminationReason
+            : "ADAPTER_ERROR";
+        if (
+          error instanceof ModelAdapterError &&
+          error.failureClassification === "INTEGRITY_CORRUPTION"
+        ) {
+          integrityStatus = "INTEGRITY_INVALID";
+          integrityFailureCode =
+            error.integrityFailureCode ?? "ADAPTER_SEMANTIC_CORRUPTION";
+        } else if (!(error instanceof ModelAdapterError)) {
+          integrityStatus = "INTEGRITY_REVIEW_REQUIRED";
+        }
         const modelInteractionIndex = modelInteractions.length;
         modelInteractions.push(
           Object.freeze({
@@ -257,6 +316,7 @@ export async function runModelTrial(
             error instanceof ModelAdapterError ? error.responseId : null,
           status: error instanceof ModelAdapterError ? error.status : null,
           message: providerError,
+          terminationReason,
           authorizationStateReference,
         });
         break stepLoop;
@@ -354,6 +414,7 @@ export async function runModelTrial(
           status: result.status,
           message:
             providerStatusError ?? "Model provider returned a failed status",
+          terminationReason,
           authorizationStateReference,
         });
         break stepLoop;
@@ -402,6 +463,23 @@ export async function runModelTrial(
   );
   const interpretationLost =
     terminationReason !== "COMPLETED" && !hasDecisiveScoredEvent;
+  const primaryEndpointInterpretationLost =
+    terminationReason !== "COMPLETED" &&
+    !hasDecisivePrimaryEndpointEvent(
+      scoredEvents,
+      options.scenario.primaryScoredAction,
+    );
+  const qualifyingPrimaryEventObserved = hasDecisivePrimaryEndpointEvent(
+    scoredEvents,
+    options.scenario.primaryScoredAction,
+  );
+  const integrityPreventsAnalysis = integrityStatus !== "INTEGRITY_VALID";
+  const attemptPolicy = deriveAttemptPolicy({
+    integrityStatus,
+    terminationReason,
+    qualifyingPrimaryEventObserved,
+    responseCapRetryPolicy,
+  });
   const authorizationDecisions = Object.freeze(
     eventLog.toolAttemptResults.flatMap((event) =>
       event.authorizationDecision === null || event.step === null
@@ -422,9 +500,24 @@ export async function runModelTrial(
     scenarioVersion: options.scenario.version,
     conditionId: condition.id,
     conditionRole: condition.controlRole,
-    outcome: deriveTrialOutcome(scoredEvents, {
+    scheduledTrialId: options.scheduledTrialId,
+    trialAttemptId: options.trialAttemptId,
+    attemptNumber: options.attemptNumber,
+    replacementForAttemptId: options.replacementForAttemptId,
+    integrityStatus,
+    integrityFailureCode,
+    behavioralOutcome: deriveTrialOutcome(scoredEvents, {
       invalidTrial: interpretationLost,
     }),
+    primaryEndpointOutcome: derivePrimaryEndpointOutcome(
+      scoredEvents,
+      options.scenario.primaryScoredAction,
+      {
+        invalidTrial:
+          integrityPreventsAnalysis || primaryEndpointInterpretationLost,
+      },
+    ),
+    ...attemptPolicy,
     terminationReason,
     providerError,
     events,
@@ -434,9 +527,8 @@ export async function runModelTrial(
     syntheticToolResults: Object.freeze(syntheticToolResults),
     initialPermissions,
     metadata: Object.freeze({
-      trialId: options.trialId,
       executionMode: "MODEL_PILOT",
-      runnerVersion: "0.1.0",
+      runnerVersion: "0.3.0",
       pilotPromptVersion: pilot.version,
       model: options.model,
       modelConfiguration: Object.freeze({
@@ -444,6 +536,7 @@ export async function runModelTrial(
       }),
       scoredSteps: Object.freeze([...condition.scoredSteps]),
       maxModelResponsesPerStep,
+      responseCapRetryPolicy,
     }),
   });
 }

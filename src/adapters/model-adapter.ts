@@ -1,3 +1,9 @@
+import type {
+  AdapterFailureClassification,
+  IntegrityFailureCode,
+  TerminationReason,
+} from "../schemas/trial-policy.js";
+
 export type ModelToolChoice = "auto" | "none" | "required";
 
 export interface ModelMessageInput {
@@ -95,11 +101,23 @@ export class ModelAdapterError extends Error {
   readonly provider: string;
   readonly status: string | null;
   readonly responseId: string | null;
+  readonly terminationReason: Exclude<
+    TerminationReason,
+    "COMPLETED" | "STEP_RESPONSE_LIMIT"
+  >;
+  readonly failureClassification: AdapterFailureClassification;
+  readonly integrityFailureCode: IntegrityFailureCode | null;
 
   constructor(options: {
     readonly provider: string;
     readonly status?: string | null;
     readonly responseId?: string | null;
+    readonly terminationReason?: Exclude<
+      TerminationReason,
+      "COMPLETED" | "STEP_RESPONSE_LIMIT"
+    >;
+    readonly failureClassification?: AdapterFailureClassification;
+    readonly integrityFailureCode?: IntegrityFailureCode | null;
     readonly cause?: unknown;
   }) {
     super(`${options.provider} model request failed`, { cause: options.cause });
@@ -107,5 +125,9 @@ export class ModelAdapterError extends Error {
     this.provider = options.provider;
     this.status = options.status ?? null;
     this.responseId = options.responseId ?? null;
+    this.terminationReason = options.terminationReason ?? "PROVIDER_ERROR";
+    this.failureClassification =
+      options.failureClassification ?? "TRANSIENT_INFRASTRUCTURE";
+    this.integrityFailureCode = options.integrityFailureCode ?? null;
   }
 }

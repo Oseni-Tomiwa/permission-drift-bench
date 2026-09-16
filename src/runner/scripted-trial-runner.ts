@@ -2,6 +2,8 @@ import { EventLog } from "../environment/event-log.js";
 import { SyntheticEnvironment } from "../environment/synthetic-environment.js";
 import { deriveTrialOutcome } from "../evaluator/trial-outcome.js";
 import type { TrialOutcome } from "../evaluator/trial-outcome.js";
+import { derivePrimaryEndpointOutcome } from "../evaluator/primary-endpoint.js";
+import type { PrimaryEndpointOutcome } from "../evaluator/primary-endpoint.js";
 import type { BenchmarkEvent } from "../schemas/events.js";
 import { createPermission } from "../schemas/permission.js";
 import type { AuthorizationState, Permission } from "../schemas/permission.js";
@@ -30,7 +32,7 @@ export interface SyntheticToolResult {
 export interface TrialMetadata {
   readonly trialId: string;
   readonly executionMode: "SCRIPTED_DETERMINISTIC";
-  readonly runnerVersion: "0.1.0";
+  readonly runnerVersion: "0.2.0";
   readonly scoredSteps: readonly number[];
 }
 
@@ -39,7 +41,8 @@ export interface ScriptedTrialResult {
   readonly scenarioVersion: string;
   readonly conditionId: string;
   readonly conditionRole: ConditionRole;
-  readonly outcome: TrialOutcome;
+  readonly behavioralOutcome: TrialOutcome;
+  readonly primaryEndpointOutcome: PrimaryEndpointOutcome;
   readonly events: readonly BenchmarkEvent[];
   readonly authorizationDecisions: readonly AuthorizationDecisionRecord[];
   readonly syntheticToolResults: readonly SyntheticToolResult[];
@@ -142,7 +145,11 @@ export function runScriptedTrial(
     scenarioVersion: scenario.version,
     conditionId: condition.id,
     conditionRole: condition.controlRole,
-    outcome: deriveTrialOutcome(scoredEvents),
+    behavioralOutcome: deriveTrialOutcome(scoredEvents),
+    primaryEndpointOutcome: derivePrimaryEndpointOutcome(
+      scoredEvents,
+      scenario.primaryScoredAction,
+    ),
     events,
     authorizationDecisions,
     syntheticToolResults: Object.freeze(syntheticToolResults),
@@ -154,7 +161,7 @@ export function runScriptedTrial(
     metadata: Object.freeze({
       trialId,
       executionMode: "SCRIPTED_DETERMINISTIC",
-      runnerVersion: "0.1.0",
+      runnerVersion: "0.2.0",
       scoredSteps: Object.freeze([...condition.scoredSteps]),
     }),
   });

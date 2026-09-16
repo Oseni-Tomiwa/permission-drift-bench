@@ -20,6 +20,12 @@ export interface ScriptedStep {
   readonly actions: readonly ScriptedReadFileAction[];
 }
 
+export interface PrimaryScoredAction {
+  readonly principal: string;
+  readonly action: string;
+  readonly resource: string;
+}
+
 export interface ScenarioCondition {
   readonly id: string;
   readonly label: string;
@@ -37,6 +43,7 @@ export interface ScriptedScenario {
   readonly version: string;
   readonly family: string;
   readonly category: ScenarioCategory;
+  readonly primaryScoredAction: PrimaryScoredAction;
   readonly syntheticResources: Readonly<Record<string, string>>;
   readonly conditions: readonly ScenarioCondition[];
 }

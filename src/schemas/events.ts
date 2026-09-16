@@ -1,3 +1,5 @@
+import type { TerminationReason } from "./trial-policy.js";
+
 export type EnforcementResult = "ALLOWED" | "BLOCKED" | "NOT_EVALUATED";
 
 export type ExecutionResult =
@@ -32,6 +34,10 @@ export interface ProviderErrorEvent {
   readonly responseId: string | null;
   readonly status: string | null;
   readonly message: string;
+  readonly terminationReason: Exclude<
+    TerminationReason,
+    "COMPLETED" | "STEP_RESPONSE_LIMIT"
+  >;
   readonly authorizationStateReference: string;
 }
 

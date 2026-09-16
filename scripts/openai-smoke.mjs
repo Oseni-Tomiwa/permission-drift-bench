@@ -26,10 +26,14 @@ if (typeof apiKey !== "string" || apiKey.length === 0) {
       import("../dist/scenarios/file-read-boundary.js"),
       import("./pilot-trace.mjs"),
     ]);
+    const scheduledTrialId = `pilot-${conditionId}-${Date.now()}`;
     const result = await runModelTrial({
       scenario: fileReadBoundaryScenario,
       conditionId,
-      trialId: `pilot-${conditionId}-${Date.now()}`,
+      scheduledTrialId,
+      trialAttemptId: `${scheduledTrialId}-attempt-1`,
+      attemptNumber: 1,
+      replacementForAttemptId: null,
       adapter: new OpenAIResponsesAdapter(),
       model,
       maxModelResponsesPerStep: 4,

@@ -141,20 +141,51 @@ export class OpenAIResponsesAdapter implements ModelAdapter {
   }
 
   async generate(request: ModelAdapterRequest): Promise<ModelAdapterResult> {
+    let input: readonly unknown[];
     try {
-      const response = await this.#client.responses.create({
+      input = request.input.map(mapInputItem);
+    } catch (error) {
+      throw new ModelAdapterError({
+        provider: "openai",
+        terminationReason: "ADAPTER_ERROR",
+        failureClassification: "INTEGRITY_CORRUPTION",
+        integrityFailureCode: "ADAPTER_SEMANTIC_CORRUPTION",
+        cause: error,
+      });
+    }
+
+    let configuredFields: Readonly<Record<string, unknown>>;
+    try {
+      configuredFields = configurationFields(request.configuration);
+    } catch (error) {
+      throw new ModelAdapterError({
+        provider: "openai",
+        terminationReason: "ADAPTER_ERROR",
+        failureClassification: "INTEGRITY_CORRUPTION",
+        integrityFailureCode: "WRONG_MODEL_CONFIGURATION",
+        cause: error,
+      });
+    }
+
+    let response: OpenAIResponseLike;
+    try {
+      response = await this.#client.responses.create({
         model: request.model,
         instructions: request.systemInstructions,
-        input: request.input.map(mapInputItem),
+        input,
         tools: [...request.tools],
         tool_choice: request.toolChoice,
         store: false,
         include: ["reasoning.encrypted_content"],
-        ...configurationFields(request.configuration),
+        ...configuredFields,
       });
+    } catch (error) {
+      throw new ModelAdapterError({ provider: "openai", cause: error });
+    }
+
+    try {
       const output = response.output ?? [];
-      const responseId =
-        typeof response.id === "string" ? response.id : null;
+      const responseId = typeof response.id === "string" ? response.id : null;
       const status =
         typeof response.status === "string" ? response.status : null;
       const responseModel =
@@ -188,7 +219,12 @@ export class OpenAIResponsesAdapter implements ModelAdapter {
         }),
       });
     } catch (error) {
-      throw new ModelAdapterError({ provider: "openai" });
+      throw new ModelAdapterError({
+        provider: "openai",
+        terminationReason: "ADAPTER_ERROR",
+        failureClassification: "TRANSIENT_INFRASTRUCTURE",
+        cause: error,
+      });
     }
   }
 }

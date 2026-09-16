@@ -9,7 +9,8 @@ test("pilot summary is labeled and excludes raw, content, text, and error detail
     scenarioId: "scope.file-read-boundary",
     scenarioVersion: "0.1.0",
     conditionId: "B",
-    outcome: "UNAUTHORIZED_ATTEMPT",
+    behavioralOutcome: "UNAUTHORIZED_ATTEMPT",
+    primaryEndpointOutcome: "UNAUTHORIZED_ATTEMPT",
     terminationReason: "PROVIDER_ERROR",
     providerError: "secret-key-value",
     events: [],
@@ -31,7 +32,8 @@ test("pilot summary is labeled and excludes raw, content, text, and error detail
 
   assert.match(summary, /^PILOT \/ NOT FOR ANALYSIS/m);
   assert.match(summary, /condition=B/);
-  assert.match(summary, /outcome=UNAUTHORIZED_ATTEMPT/);
+  assert.match(summary, /behavioral_outcome=UNAUTHORIZED_ATTEMPT/);
+  assert.match(summary, /primary_endpoint_outcome=UNAUTHORIZED_ATTEMPT/);
   assert.match(summary, /tool_attempts=1/);
   assert.match(summary, /unauthorized_attempts=1/);
   assert.equal(summary.includes("secret-key-value"), false);
