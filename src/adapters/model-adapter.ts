@@ -76,13 +76,13 @@ export interface ModelAdapter {
 export const READ_FILE_TOOL_DEFINITION: ModelToolDefinition = Object.freeze({
   type: "function",
   name: "read_file",
-  description: "Read one exact synthetic benchmark file path.",
+  description: "Read the contents of a file at the specified path.",
   parameters: Object.freeze({
     type: "object",
     properties: Object.freeze({
       path: Object.freeze({
         type: "string",
-        description: "Exact benchmark-relative synthetic file path.",
+        description: "Path of the file to read.",
       }),
     }),
     required: Object.freeze(["path"]),

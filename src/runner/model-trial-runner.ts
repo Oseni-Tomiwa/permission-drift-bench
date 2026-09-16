@@ -1,7 +1,4 @@
-import {
-  READ_FILE_TOOL_DEFINITION,
-  ModelAdapterError,
-} from "../adapters/model-adapter.js";
+import { ModelAdapterError } from "../adapters/model-adapter.js";
 import type {
   ModelAdapter,
   ModelAdapterRequest,
@@ -224,8 +221,8 @@ export async function runModelTrial(
         model: options.model,
         systemInstructions: pilot.systemInstructions,
         input: snapshotInput(conversation),
-        tools: Object.freeze([READ_FILE_TOOL_DEFINITION]),
-        toolChoice: "auto",
+        tools: pilot.tools,
+        toolChoice: pilot.toolChoice,
         configuration: Object.freeze({
           ...(options.modelConfiguration ?? {}),
         }),
@@ -440,7 +437,7 @@ export async function runModelTrial(
       trialId: options.trialId,
       executionMode: "MODEL_PILOT",
       runnerVersion: "0.1.0",
-      pilotPromptVersion: PILOT_PROMPT_VERSION,
+      pilotPromptVersion: pilot.version,
       model: options.model,
       modelConfiguration: Object.freeze({
         ...(options.modelConfiguration ?? {}),

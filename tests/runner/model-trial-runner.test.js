@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { runModelTrial } from "../../dist/runner/model-trial-runner.js";
+import { getFileReadBoundaryPilot } from "../../dist/scenarios/file-read-boundary-pilot.js";
 import {
   ALPHA_PATH,
   BASELINE_PATH,
@@ -54,6 +55,30 @@ test("Condition A completes authorized Alpha and Beta reads", async () => {
     ],
   );
   assert.equal(result.metadata.maxModelResponsesPerStep, 4);
+});
+
+test("runner requests consume the authored pilot bundle", async () => {
+  const adapter = new ScriptedFakeModelAdapter([
+    ...completedReadStep("bundle-alpha", ALPHA_PATH),
+    fakeResult({ id: "bundle-boundary", text: "No tool action." }),
+  ]);
+  const pilot = getFileReadBoundaryPilot("B");
+
+  await runModelTrial(options("B", adapter));
+
+  assert.ok(adapter.requests.length > 0);
+  for (const request of adapter.requests) {
+    assert.equal(request.systemInstructions, pilot.systemInstructions);
+    assert.equal(request.tools, pilot.tools);
+    assert.equal(request.toolChoice, pilot.toolChoice);
+  }
+  assert.deepEqual(
+    adapter.requests
+      .at(-1)
+      .input.filter((item) => item.type === "message" && item.role === "user")
+      .map((item) => item.content),
+    pilot.steps.map((step) => step.prompt),
+  );
 });
 
 test("Conditions B, C, and D record and block unauthorized Beta reads", async () => {

@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { ModelAdapterError } from "../../dist/adapters/model-adapter.js";
+import {
+  ModelAdapterError,
+  READ_FILE_TOOL_DEFINITION,
+} from "../../dist/adapters/model-adapter.js";
 import { runModelTrial } from "../../dist/runner/model-trial-runner.js";
 import {
   ALPHA_CONTENT,
@@ -12,11 +15,8 @@ import {
   BETA_PATH,
   fileReadBoundaryScenario,
 } from "../../dist/scenarios/file-read-boundary.js";
-import {
-  buildPilotTrace,
-  emitPilotArtifacts,
-  writePilotTrace,
-} from "../../scripts/pilot-trace.mjs";
+import { getFileReadBoundaryPilot } from "../../dist/scenarios/file-read-boundary-pilot.js";
+import * as pilotTraceModule from "../../scripts/pilot-trace.mjs";
 import {
   ScriptedFakeModelAdapter,
   fakeResult,
@@ -24,6 +24,8 @@ import {
 } from "../helpers/fake-model-adapter.js";
 
 const SENSITIVE_VALUE = "placeholder-sensitive-value";
+const { buildPilotTrace, emitPilotArtifacts, writePilotTrace } =
+  pilotTraceModule;
 
 async function completedConditionB() {
   const first = fakeResult({
@@ -56,6 +58,9 @@ async function completedConditionB() {
     modelConfiguration: {
       OPENAI_API_KEY: SENSITIVE_VALUE,
       headers: { authorization: `Bearer ${SENSITIVE_VALUE}` },
+      environment: { FAKE_ENVIRONMENT_VALUE: SENSITIVE_VALUE },
+      credential: { nested: SENSITIVE_VALUE },
+      providerMetadata: { arbitrary: SENSITIVE_VALUE },
     },
     maxModelResponsesPerStep: 4,
   });
@@ -75,6 +80,7 @@ test("pilot trace preserves ordered inspectable behavior through an allowlisted 
     version: "0.1.0",
   });
   assert.equal(trace.condition, "B");
+  assert.equal(trace.pilotPromptVersion, "pilot-0.2.0");
   assert.equal(trace.modelId, "fake-model");
   assert.equal(trace.trialId, "pilot-B-test");
   assert.equal(trace.trialOutcome, "UNAUTHORIZED_ATTEMPT");
@@ -158,6 +164,235 @@ test("pilot trace preserves ordered inspectable behavior through an allowlisted 
   assert.equal(serialized.includes("rawProviderResponse"), false);
   assert.equal(serialized.includes("modelConfiguration"), false);
   assert.equal(serialized.includes("authorization\""), false);
+  assert.equal(serialized.includes("OPENAI_API_KEY"), false);
+  assert.equal(serialized.includes("headers"), false);
+  assert.equal(serialized.includes("environment"), false);
+  assert.equal(serialized.includes("credential"), false);
+  assert.equal(serialized.includes("providerMetadata"), false);
+});
+
+test("pilot trace preserves immutable canonical prompt provenance", async () => {
+  const result = await completedConditionB();
+  const trace = buildPilotTrace(result);
+  const pilot = getFileReadBoundaryPilot("B");
+
+  assert.equal(trace.promptProvenance.condition, "B");
+  assert.equal(trace.promptProvenance.pilotPromptVersion, "pilot-0.2.0");
+  assert.equal(trace.promptProvenance.hashAlgorithm, "sha256");
+  assert.match(trace.promptProvenance.promptHash, /^[a-f0-9]{64}$/);
+  assert.equal(
+    trace.promptProvenance.promptId,
+    `pilot-0.2.0:B:${trace.promptProvenance.promptHash}`,
+  );
+  assert.deepEqual(trace.promptProvenance.modelVisiblePrompt, {
+    systemInstructions: pilot.systemInstructions,
+    steps: pilot.steps.map(({ step, prompt }) => ({ step, prompt })),
+    tools: pilot.tools,
+    toolChoice: pilot.toolChoice,
+  });
+  assert.equal(Object.isFrozen(trace.promptProvenance), true);
+  assert.equal(Object.isFrozen(trace.promptProvenance.modelVisiblePrompt), true);
+  assert.equal(
+    Object.isFrozen(trace.promptProvenance.modelVisiblePrompt.steps),
+    true,
+  );
+  assert.equal(
+    Object.isFrozen(trace.promptProvenance.modelVisiblePrompt.tools),
+    true,
+  );
+});
+
+test("runner request and provenance consume the same authored bundle", async () => {
+  const adapter = new ScriptedFakeModelAdapter([
+    fakeResult({ id: "response-context", text: "Context received." }),
+    fakeResult({ id: "response-boundary", text: "Unable to calculate." }),
+  ]);
+  const result = await runModelTrial({
+    scenario: fileReadBoundaryScenario,
+    conditionId: "D",
+    trialId: "pilot-D-shared-bundle",
+    adapter,
+    model: "fake-model",
+  });
+  const pilot = getFileReadBoundaryPilot("D");
+  const trace = buildPilotTrace(result);
+
+  for (const request of adapter.requests) {
+    assert.equal(request.systemInstructions, pilot.systemInstructions);
+    assert.equal(request.tools, pilot.tools);
+    assert.equal(request.toolChoice, pilot.toolChoice);
+  }
+  assert.equal(
+    trace.promptProvenance.modelVisiblePrompt.toolChoice,
+    adapter.requests[0].toolChoice,
+  );
+  assert.deepEqual(
+    trace.promptProvenance.modelVisiblePrompt.tools,
+    adapter.requests[0].tools,
+  );
+});
+
+test("authored bundle toolChoice changes provenance without a second constant", () => {
+  const pilot = getFileReadBoundaryPilot("B");
+  const original = pilotTraceModule.buildPromptProvenance(pilot);
+  const changed = pilotTraceModule.buildPromptProvenance({
+    ...pilot,
+    toolChoice: "none",
+  });
+
+  assert.equal(original.modelVisiblePrompt.toolChoice, "auto");
+  assert.equal(changed.modelVisiblePrompt.toolChoice, "none");
+  assert.notEqual(original.promptHash, changed.promptHash);
+  assert.equal(
+    changed.promptId,
+    `${pilot.version}:${pilot.conditionId}:${changed.promptHash}`,
+  );
+});
+
+test("identical authored prompt content produces the same hash", async () => {
+  const first = buildPilotTrace(await completedConditionB());
+  const second = buildPilotTrace(await completedConditionB(), {
+    timestamp: new Date("2030-01-01T00:00:00.000Z"),
+  });
+
+  assert.equal(
+    first.promptProvenance.promptHash,
+    second.promptProvenance.promptHash,
+  );
+});
+
+test("every authored prompt component and its ordering affects the hash", async () => {
+  const trace = buildPilotTrace(await completedConditionB());
+  const original = trace.promptProvenance.modelVisiblePrompt;
+  const hash = pilotTraceModule.hashModelVisiblePrompt;
+  const clone = (value) => JSON.parse(JSON.stringify(value));
+  const secondTool = {
+    ...clone(original.tools[0]),
+    name: "read_file_variant",
+    description: "Read another exact synthetic file path.",
+  };
+
+  const systemChanged = clone(original);
+  systemChanged.systemInstructions += " Additional authored instruction.";
+  assert.notEqual(hash(systemChanged), hash(original));
+
+  const stepChanged = clone(original);
+  stepChanged.steps[0].prompt += " Additional authored task text.";
+  assert.notEqual(hash(stepChanged), hash(original));
+
+  const toolChanged = clone(original);
+  toolChanged.tools[0].description += " Additional authored tool text.";
+  assert.notEqual(hash(toolChanged), hash(original));
+
+  const toolChoiceChanged = clone(original);
+  toolChoiceChanged.toolChoice = "none";
+  assert.notEqual(hash(toolChoiceChanged), hash(original));
+
+  const stepsReordered = clone(original);
+  stepsReordered.steps.reverse();
+  assert.notEqual(hash(stepsReordered), hash(original));
+
+  const firstToolOrder = { ...clone(original), tools: [original.tools[0], secondTool] };
+  const secondToolOrder = { ...clone(original), tools: [secondTool, original.tools[0]] };
+  assert.notEqual(hash(firstToolOrder), hash(secondToolOrder));
+});
+
+test("condition-specific prompt provenance remains distinct", async () => {
+  const conditionB = buildPilotTrace(await completedConditionB());
+  const conditionDResult = await runModelTrial({
+    scenario: fileReadBoundaryScenario,
+    conditionId: "D",
+    trialId: "pilot-D-provenance",
+    adapter: new ScriptedFakeModelAdapter([
+      fakeResult({ id: "response-context", text: "Context received." }),
+      fakeResult({ id: "response-boundary", text: "Unable to calculate." }),
+    ]),
+    model: "fake-model",
+  });
+  const conditionD = buildPilotTrace(conditionDResult);
+
+  assert.equal(conditionB.promptProvenance.condition, "B");
+  assert.equal(conditionD.promptProvenance.condition, "D");
+  assert.notEqual(
+    conditionB.promptProvenance.promptHash,
+    conditionD.promptProvenance.promptHash,
+  );
+  assert.deepEqual(
+    conditionD.promptProvenance.modelVisiblePrompt.steps,
+    getFileReadBoundaryPilot("D").steps.map(({ step, prompt }) => ({
+      step,
+      prompt,
+    })),
+  );
+});
+
+test("prompt provenance allowlists tool fields and rejects arbitrary nested data", async () => {
+  const trace = buildPilotTrace(await completedConditionB());
+  const tool = trace.promptProvenance.modelVisiblePrompt.tools[0];
+
+  assert.deepEqual(Object.keys(tool), [
+    "type",
+    "name",
+    "description",
+    "parameters",
+    "strict",
+  ]);
+  assert.deepEqual(Object.keys(tool.parameters), [
+    "type",
+    "properties",
+    "required",
+    "additionalProperties",
+  ]);
+  assert.throws(
+    () =>
+      pilotTraceModule.hashModelVisiblePrompt({
+        ...trace.promptProvenance.modelVisiblePrompt,
+        tools: [
+          {
+            ...tool,
+            providerMetadata: {
+              apiKey: SENSITIVE_VALUE,
+              headers: { authorization: `Bearer ${SENSITIVE_VALUE}` },
+              environment: { SECRET: SENSITIVE_VALUE },
+            },
+          },
+        ],
+      }),
+    /Unapproved tool field/,
+  );
+  assert.throws(
+    () =>
+      pilotTraceModule.hashModelVisiblePrompt({
+        ...trace.promptProvenance.modelVisiblePrompt,
+        systemInstructions: `OPENAI_API_KEY=${SENSITIVE_VALUE}`,
+      }),
+    /Credential-like prompt content/,
+  );
+  assert.throws(
+    () =>
+      pilotTraceModule.hashModelVisiblePrompt({
+        ...trace.promptProvenance.modelVisiblePrompt,
+        tools: [
+          {
+            ...tool,
+            parameters: {
+              ...tool.parameters,
+              additionalProperties: {
+                credential: SENSITIVE_VALUE,
+              },
+            },
+          },
+        ],
+      }),
+    /additionalProperties must be a boolean/,
+  );
+
+  const serialized = JSON.stringify(trace);
+  assert.equal(serialized.includes(SENSITIVE_VALUE), false);
+  assert.equal(serialized.includes("apiKey"), false);
+  assert.equal(serialized.includes("headers"), false);
+  assert.equal(serialized.includes("environment"), false);
+  assert.equal(serialized.includes("providerMetadata"), false);
 });
 
 test("pilot trace retains sanitized provider and adapter errors", async () => {

@@ -1,7 +1,179 @@
+import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 
+import { getFileReadBoundaryPilot } from "../dist/scenarios/file-read-boundary-pilot.js";
+
 const PILOT_MARKER = "PILOT_NOT_FOR_ANALYSIS";
+const PROMPT_HASH_ALGORITHM = "sha256";
+
+const PROMPT_KEYS = new Set([
+  "systemInstructions",
+  "steps",
+  "tools",
+  "toolChoice",
+]);
+const STEP_KEYS = new Set(["step", "prompt"]);
+const TOOL_KEYS = new Set([
+  "type",
+  "name",
+  "description",
+  "parameters",
+  "strict",
+]);
+const PARAMETER_KEYS = new Set([
+  "type",
+  "properties",
+  "required",
+  "additionalProperties",
+]);
+const PROPERTY_KEYS = new Set(["type", "description"]);
+
+const CREDENTIAL_PATTERN =
+  /(?:sk-(?:proj-)?[A-Za-z0-9_-]{16,}|Bearer\s+[^\s"']+|(?:OPENAI|ANTHROPIC|GOOGLE)_API_KEY\s*[:=])/i;
+
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function assertOnlyKeys(value, allowed, label) {
+  if (!isRecord(value)) {
+    throw new TypeError(`${label} must be an object`);
+  }
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) {
+      throw new TypeError(`Unapproved ${label} field: ${key}`);
+    }
+  }
+}
+
+function assertAuthoredText(value, label) {
+  if (typeof value !== "string") {
+    throw new TypeError(`${label} must be a string`);
+  }
+  if (CREDENTIAL_PATTERN.test(value)) {
+    throw new TypeError(`Credential-like prompt content in ${label}`);
+  }
+  return value;
+}
+
+function projectToolParameters(parameters) {
+  assertOnlyKeys(parameters, PARAMETER_KEYS, "tool parameters");
+  if (!isRecord(parameters.properties)) {
+    throw new TypeError("tool parameters properties must be an object");
+  }
+  if (!Array.isArray(parameters.required)) {
+    throw new TypeError("tool parameters required must be an array");
+  }
+  if (typeof parameters.additionalProperties !== "boolean") {
+    throw new TypeError("tool additionalProperties must be a boolean");
+  }
+
+  const properties = {};
+  for (const name of Object.keys(parameters.properties).sort()) {
+    const property = parameters.properties[name];
+    assertOnlyKeys(property, PROPERTY_KEYS, "tool property");
+    properties[name] = {
+      type: assertAuthoredText(property.type, "tool property type"),
+      description: assertAuthoredText(
+        property.description,
+        "tool property description",
+      ),
+    };
+  }
+
+  return {
+    type: assertAuthoredText(parameters.type, "tool parameters type"),
+    properties,
+    required: parameters.required.map((name) =>
+      assertAuthoredText(name, "tool required property"),
+    ),
+    additionalProperties: parameters.additionalProperties,
+  };
+}
+
+function projectToolDefinition(tool) {
+  assertOnlyKeys(tool, TOOL_KEYS, "tool");
+  if (typeof tool.strict !== "boolean") {
+    throw new TypeError("tool strict must be a boolean");
+  }
+  return {
+    type: assertAuthoredText(tool.type, "tool type"),
+    name: assertAuthoredText(tool.name, "tool name"),
+    description: assertAuthoredText(tool.description, "tool description"),
+    parameters: projectToolParameters(tool.parameters),
+    strict: tool.strict,
+  };
+}
+
+function projectModelVisiblePrompt(value) {
+  assertOnlyKeys(value, PROMPT_KEYS, "model-visible prompt");
+  if (!Array.isArray(value.steps)) {
+    throw new TypeError("model-visible prompt steps must be an array");
+  }
+  if (!Array.isArray(value.tools)) {
+    throw new TypeError("model-visible prompt tools must be an array");
+  }
+
+  return {
+    systemInstructions: assertAuthoredText(
+      value.systemInstructions,
+      "system instructions",
+    ),
+    steps: value.steps.map((step) => {
+      assertOnlyKeys(step, STEP_KEYS, "prompt step");
+      if (!Number.isInteger(step.step)) {
+        throw new TypeError("prompt step number must be an integer");
+      }
+      return {
+        step: step.step,
+        prompt: assertAuthoredText(step.prompt, "step prompt"),
+      };
+    }),
+    tools: value.tools.map(projectToolDefinition),
+    toolChoice: assertAuthoredText(value.toolChoice, "tool choice"),
+  };
+}
+
+function deepFreeze(value) {
+  if (!isRecord(value) && !Array.isArray(value)) {
+    return value;
+  }
+  for (const nested of Object.values(value)) {
+    deepFreeze(nested);
+  }
+  return Object.freeze(value);
+}
+
+export function hashModelVisiblePrompt(value) {
+  const canonicalPrompt = projectModelVisiblePrompt(value);
+  const canonicalJson = JSON.stringify(canonicalPrompt);
+  return createHash(PROMPT_HASH_ALGORITHM)
+    .update(Buffer.from(canonicalJson, "utf8"))
+    .digest("hex");
+}
+
+export function buildPromptProvenance(pilot) {
+  const modelVisiblePrompt = deepFreeze(
+    projectModelVisiblePrompt({
+      systemInstructions: pilot.systemInstructions,
+      steps: pilot.steps.map(({ step, prompt }) => ({ step, prompt })),
+      tools: pilot.tools,
+      toolChoice: pilot.toolChoice,
+    }),
+  );
+  const promptHash = hashModelVisiblePrompt(modelVisiblePrompt);
+  const pilotPromptVersion = pilot.version;
+
+  return deepFreeze({
+    promptId: `${pilotPromptVersion}:${pilot.conditionId}:${promptHash}`,
+    condition: pilot.conditionId,
+    pilotPromptVersion,
+    hashAlgorithm: PROMPT_HASH_ALGORITHM,
+    promptHash,
+    modelVisiblePrompt,
+  });
+}
 
 const redactText = (value) =>
   value
@@ -198,6 +370,9 @@ export function buildPilotTrace(result, options = {}) {
       ];
     },
   );
+  const promptProvenance = buildPromptProvenance(
+    getFileReadBoundaryPilot(result.conditionId),
+  );
 
   return {
     pilotMarker: PILOT_MARKER,
@@ -207,6 +382,8 @@ export function buildPilotTrace(result, options = {}) {
       version: result.scenarioVersion,
     },
     condition: result.conditionId,
+    pilotPromptVersion: promptProvenance.pilotPromptVersion,
+    promptProvenance,
     modelId: redactText(result.metadata.model),
     trialId: redactText(result.metadata.trialId),
     trialOutcome: result.outcome,
