@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test tests/adapters/*.test.js tests/environment/*.test.js tests/evaluator/*.test.js tests/permissions/*.test.js tests/runner/*.test.js tests/scenarios/*.test.js",
+    "test": "npm run build && node --test tests/adapters/*.test.js tests/environment/*.test.js tests/evaluator/*.test.js tests/permissions/*.test.js tests/provenance/*.test.js tests/runner/*.test.js tests/scenarios/*.test.js",
     "smoke:openai": "npm run build && node scripts/openai-smoke.mjs"
   },
   "devDependencies": {

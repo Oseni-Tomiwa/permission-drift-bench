@@ -1,5 +1,7 @@
 import type { PrimaryEndpointOutcome } from "../evaluator/primary-endpoint.js";
 import type { TrialOutcome } from "../evaluator/trial-outcome.js";
+import { verifyRunSpecification } from "../provenance/run-specification.js";
+import type { VerifiedRunSpecification } from "../provenance/run-specification.js";
 import type {
   AttemptDisposition,
   IntegrityFailureCode,
@@ -11,6 +13,8 @@ import type {
 
 export interface AppendableTrialAttempt {
   readonly scheduledTrialId: string;
+  readonly runSpecificationId: string;
+  readonly runSpecificationHash: string;
   readonly trialAttemptId: string;
   readonly attemptNumber: number;
   readonly replacementForAttemptId: string | null;
@@ -28,6 +32,8 @@ export type ScheduledTrialAttemptRecord = Readonly<AppendableTrialAttempt>;
 
 export interface ScheduledTrialRecord {
   readonly scheduledTrialId: string;
+  readonly runSpecificationId: string;
+  readonly runSpecificationHash: string;
   readonly status: ScheduledTrialStatus;
   readonly finalAnalyzableAttemptId: string | null;
   readonly attempts: readonly ScheduledTrialAttemptRecord[];
@@ -35,12 +41,21 @@ export interface ScheduledTrialRecord {
 
 export function createScheduledTrial(
   scheduledTrialId: string,
+  verifiedRun: VerifiedRunSpecification,
 ): ScheduledTrialRecord {
   if (scheduledTrialId.length === 0) {
-    throw new Error("scheduledTrialId must not be empty");
+    throw new Error("Scheduled trial ID must not be empty");
+  }
+  let run: VerifiedRunSpecification;
+  try {
+    run = verifyRunSpecification(verifiedRun);
+  } catch {
+    throw new Error("Scheduled trial requires a verified run specification");
   }
   return Object.freeze({
     scheduledTrialId,
+    runSpecificationId: run.runSpecificationId,
+    runSpecificationHash: run.runSpecificationHash,
     status: "PENDING",
     finalAnalyzableAttemptId: null,
     attempts: Object.freeze([]),
@@ -69,8 +84,17 @@ export function appendTrialAttempt(
   if (scheduled.status !== "PENDING") {
     throw new Error(`Cannot append to scheduled trial in ${scheduled.status}`);
   }
+  if (attempt.trialAttemptId.length === 0) {
+    throw new Error("Trial attempt ID must not be empty");
+  }
   if (attempt.scheduledTrialId !== scheduled.scheduledTrialId) {
     throw new Error("Attempt belongs to a different scheduled trial");
+  }
+  if (
+    attempt.runSpecificationId !== scheduled.runSpecificationId ||
+    attempt.runSpecificationHash !== scheduled.runSpecificationHash
+  ) {
+    throw new Error("Attempt belongs to a different run specification");
   }
   const expectedAttemptNumber = scheduled.attempts.length + 1;
   const previousAttempt = scheduled.attempts.at(-1);
@@ -88,6 +112,8 @@ export function appendTrialAttempt(
 
   const record = Object.freeze({
     scheduledTrialId: attempt.scheduledTrialId,
+    runSpecificationId: attempt.runSpecificationId,
+    runSpecificationHash: attempt.runSpecificationHash,
     trialAttemptId: attempt.trialAttemptId,
     attemptNumber: attempt.attemptNumber,
     replacementForAttemptId: attempt.replacementForAttemptId,
@@ -103,6 +129,8 @@ export function appendTrialAttempt(
   const status = statusAfterAttempt(attempt.attemptDisposition);
   return Object.freeze({
     scheduledTrialId: scheduled.scheduledTrialId,
+    runSpecificationId: scheduled.runSpecificationId,
+    runSpecificationHash: scheduled.runSpecificationHash,
     status,
     finalAnalyzableAttemptId:
       status === "ANALYZABLE" ? attempt.trialAttemptId : null,

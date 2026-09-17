@@ -8,6 +8,7 @@ import {
   ModelAdapterError,
   READ_FILE_TOOL_DEFINITION,
 } from "../../dist/adapters/model-adapter.js";
+import { sha256CanonicalJson } from "../../dist/provenance/canonical-json.js";
 import { runModelTrial } from "../../dist/runner/model-trial-runner.js";
 import {
   ALPHA_CONTENT,
@@ -77,7 +78,7 @@ test("pilot trace preserves ordered inspectable behavior through an allowlisted 
   });
 
   assert.equal(trace.pilotMarker, "PILOT_NOT_FOR_ANALYSIS");
-  assert.equal(trace.traceSchemaVersion, "pilot-trace-0.3.0");
+  assert.equal(trace.traceSchemaVersion, "pilot-trace-0.4.0");
   assert.equal(trace.timestamp, "2026-09-15T08:30:00.000Z");
   assert.deepEqual(trace.scenario, {
     id: "scope.file-read-boundary",
@@ -192,6 +193,10 @@ test("pilot trace preserves immutable canonical prompt provenance", async () => 
   assert.equal(trace.promptProvenance.condition, "B");
   assert.equal(trace.promptProvenance.pilotPromptVersion, "pilot-0.2.0");
   assert.equal(trace.promptProvenance.hashAlgorithm, "sha256");
+  assert.equal(
+    trace.promptProvenance.canonicalHashContractVersion,
+    "canonical-json-v0.1",
+  );
   assert.match(trace.promptProvenance.promptHash, /^[a-f0-9]{64}$/);
   assert.equal(
     trace.promptProvenance.promptId,
@@ -212,6 +217,10 @@ test("pilot trace preserves immutable canonical prompt provenance", async () => 
   assert.equal(
     Object.isFrozen(trace.promptProvenance.modelVisiblePrompt.tools),
     true,
+  );
+  assert.equal(
+    trace.promptProvenance.promptHash,
+    sha256CanonicalJson(trace.promptProvenance.modelVisiblePrompt),
   );
 });
 

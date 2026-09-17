@@ -541,6 +541,14 @@ The following must be resolved before accepting a main-run freeze where applicab
 - **Implemented:** Current pilot traces are gitignored and marked `PILOT_NOT_FOR_ANALYSIS`.
 - **Implemented:** Current sanitized trace schema preserves prompt provenance, ordered model responses, tool calls, authorization decisions, enforcement/results, event log, and sanitized provider/adapter errors.
 - **Implemented:** Adapter errors distinguish transient infrastructure failures from recognized integrity corruption.
+- **Implemented:** One frozen `canonical-json-v0.1` UTF-8/SHA-256 contract is shared by pilot prompt, model-configuration, assignment-definition, run-specification, and frozen-assignment hashing.
+- **Implemented:** Immutable content-addressed model-configuration records explicitly represent every supported setting as a value, unavailable, or unresolved and can be verified after deserialization.
+- **Implemented:** Immutable content-addressed `AssignmentDefinition` records contain assignment content without parent-run references.
+- **Implemented:** Immutable content-addressed `RunSpecification` records contain ordered assignment definitions and identify their hash algorithm, canonicalization contract, freeze-decision catalog, and exhaustive decision registry.
+- **Implemented:** Run-bound `FrozenAssignment` v0.2 records are materialized only from definitions already present in a verified run and can be verified independently against that parent.
+- **Implemented:** Assignment, main-collection, and analysis readiness validators enforce their applicable unresolved freeze-decision gates with machine-readable reason codes.
+- **Implemented:** Core provenance-completeness validation distinguishes `COMPLETE`, `INCOMPLETE_OPTIONAL`, `INTEGRITY_INVALID`, and `REVIEW_REQUIRED`, including explicit missing/conflicting evidence and complete attempt-chain validation.
+- **Implemented:** In-memory scheduled trials require a verified run specification and retain that run ID/hash on every formal attempt record.
 
 ### 22.2 Partially implemented
 
@@ -548,15 +556,14 @@ The following must be resolved before accepting a main-run freeze where applicab
 - **Partially implemented:** The pilot trace has immutable prompt hashes and trace identity fields, but it does not provide the full main-run artifact-ID/hash graph specified here.
 - **Partially implemented:** The event log preserves execution ordering in arrays and logs tool attempts before results, but events lack required globally unique event IDs, explicit sequence numbers, and event timestamps/ordering markers.
 - **Partially implemented:** Initial permissions and authorization-state references are preserved, but complete state snapshots/hashes, transition records, matched-permission IDs, and denial reason codes are absent.
-- **Partially implemented:** Scheduled trials and attempts have IDs, attempt numbers, immediate replacement links, and dispositions, but they do not reference a content-addressed run specification.
-- **Partially implemented:** Model configuration is passed and retained as a generic object, but there is no immutable configuration ID, requested-versus-effective comparison, or explicit `UNAVAILABLE` representation for every provider field.
+- **Partially implemented:** Scheduled trials and attempts have IDs, attempt numbers, immediate replacement links, dispositions, and verified run references in memory, but no durable main-run store or admission workflow exists.
+- **Partially implemented:** Immutable model-configuration records and explicit unavailable states exist, but the pilot runner still accepts its separate provider request configuration and no requested-versus-provider-effective comparison exists.
 - **Partially implemented:** Runner, prompt, scenario, and trace versions exist, but adapter, simulator, tool, authorization-evaluator, and scoring components do not yet have a complete unified version manifest.
 - **Partially implemented:** Provider continuation state is kept in the local interaction ledger, but main-run provider-state isolation assertions and reuse records are not formalized.
-- **Partially implemented:** Secret allowlisting/redaction exists for pilot trace construction, but no protected-artifact secret validator or main-run completeness validator exists.
+- **Partially implemented:** Secret allowlisting/redaction exists for pilot trace construction, and a core main-run provenance-completeness validator exists, but it does not yet validate the full event, authorization-state, environment, and reciprocal artifact graph specified here.
 
 ### 22.3 Not implemented
 
-- **Not implemented:** Immutable `RunSpecification`, canonical `runSpecificationHash`, or derived `runSpecificationId`.
 - **Not implemented:** Main-run record and lifecycle state machine.
 - **Not implemented:** Frozen assignment-set manifest and assignment-set hash.
 - **Not implemented:** Randomization/counterbalancing generator and provenance.
@@ -566,7 +573,6 @@ The following must be resolved before accepting a main-run freeze where applicab
 - **Not implemented:** Canonical environment manifest, lockfile hash record, or environment-manifest hash.
 - **Not implemented:** Exact tool/synthetic-resource/simulator artifact hash graph required by this specification.
 - **Not implemented:** Complete authorization-state reconstruction with transitions and decision reasons.
-- **Not implemented:** Provenance-completeness validator and the four completeness states.
 - **Not implemented:** Integrity-review/adjudication records and reviewer identity handling.
 - **Not implemented:** Manifest signing or signature verification.
 - **Not implemented:** Run-level completeness report or final run-completion manifest.
@@ -590,49 +596,70 @@ The following should be resolved before freeze acceptance, but this document doe
 
 ## 24. Implementation Readiness Checklist
 
-### Already implemented
+### Implemented
 
-- [x] Canonical authored pilot prompt bundle.
-- [x] Prompt version, condition, SHA-256 hash, and derived prompt ID.
+- [x] Canonical authored pilot prompt bundle, including prompt version and condition.
+- [x] Shared `canonical-json-v0.1` canonical JSON and SHA-256 hashing for production content-addressed records.
+- [x] Explicit `hashAlgorithm` and `canonicalHashContractVersion` fields on content-addressed records.
+- [x] Prompt SHA-256 hash and derived prompt ID.
+- [x] Immutable, content-addressed model configurations with explicit value, unavailable, and unresolved setting states.
+- [x] Immutable, content-addressed `AssignmentDefinition` records without parent-run references.
+- [x] Immutable, content-addressed `RunSpecification` records containing ordered assignment definitions.
+- [x] Run-bound `FrozenAssignment` materialization and verification against the exact parent-run definition.
+- [x] Recursive verification of content-addressed model configurations, assignment definitions, run specifications, and frozen assignments after deserialization.
+- [x] Exhaustive freeze-decision registry with assignment, main-collection, and analysis readiness validation.
+- [x] Core provenance-completeness validation with explicit `COMPLETE`, `INCOMPLETE_OPTIONAL`, `INTEGRITY_INVALID`, and `REVIEW_REQUIRED` states.
+- [x] Standalone attempt-chain validation for attempt numbering, identity, predecessor, run, scheduled-trial, and current-attempt consistency.
 - [x] Simulated tools and synthetic resources only.
-- [x] Attempt identity and immediate replacement lineage.
 - [x] Separate behavioral, primary-endpoint, integrity, termination, and retry fields.
-- [x] Sanitized pilot trace with secret exclusions.
-- [x] Pilot/main-analysis exclusion marker for current traces.
+- [x] Sanitized pilot trace with secret exclusions and a pilot/main-analysis exclusion marker.
 
 ### Partially implemented
 
 - [ ] Lossless interaction ledger is available during a run but lacks protected durable retention.
 - [ ] Event ordering exists but lacks the complete main-run event envelope.
 - [ ] Authorization decisions exist but lack full state-transition reconstruction and reason provenance.
-- [ ] Model configuration exists but lacks immutable IDs and explicit unavailable-field records.
+- [ ] Run-bound scheduled-trial and attempt lineage exists in memory, but no durable store, scheduler, or main-run admission/orchestration layer exists.
+- [ ] Core content-addressed artifact types verify their own and nested identities, but the complete reciprocal artifact graph is not implemented.
+- [ ] Pilot prompt and trace provenance are content-addressed, but sanitized traces do not yet carry the full main-run artifact-ID/hash graph.
 - [ ] Component versions exist individually but not as one hashed environment manifest.
-- [ ] Scheduled-trial lineage exists in memory but is not attached to a run specification or durable store.
+- [ ] Secret allowlisting and redaction exist for pilot traces, but protected provider-response storage and its security controls are absent.
 
 ### Not implemented
 
-- [ ] Canonical run specification and content-addressed ID/hash.
+- [ ] Actual scheduler and randomization execution.
 - [ ] Frozen assignment-set manifest and hash.
-- [ ] Main-run lifecycle and main-data boundary enforcement.
-- [ ] Randomization schedule generation and reproduction records.
-- [ ] Protected research-artifact store and reciprocal artifact links.
-- [ ] Environment, resource, simulator, and authorization-state manifest hashes.
-- [ ] Provenance-completeness validator and completeness states.
-- [ ] Integrity review/adjudication workflow.
-- [ ] Optional manifest signatures.
+- [ ] Main-run admission, orchestration, lifecycle, and main-data boundary enforcement.
+- [ ] Protected provider-response and research-artifact storage.
+- [ ] Encryption, access control, retention, backup, deletion, and audit-log enforcement for protected artifacts.
+- [ ] Environment and dependency manifest generation and hashing.
+- [ ] Complete tool, simulator, synthetic-resource, and authorization-state artifact graph.
+- [ ] Manifest signing and signature verification.
+- [ ] Statistical computation and interval estimation.
+- [ ] Sample-size computation.
+- [ ] Final analysis-denominator computation.
+- [ ] Natural-language annotation workflow.
+- [ ] Human integrity-review/adjudication workflow or UI.
 - [ ] Final run-completion manifest.
 
 ### Unresolved policy
 
-- [ ] Protected raw-provider retention, storage, encryption, and duration.
-- [ ] Exact environment-manifest scope.
-- [ ] Randomization/counterbalancing scheme and seed handling.
-- [ ] Hash-only versus hash-plus-signature policy.
-- [ ] Reviewer identities and adjudication procedure.
+- [ ] Final model roster and frozen model configurations.
+- [ ] Repetition count and sample-size decision.
+- [ ] Prompt-variant strategy.
+- [ ] Exact randomization/counterbalancing policy, seed procedure, blocks, and schedule constraints.
+- [ ] Retry limits, retryable error classes, backoff, and abandonment policy.
+- [ ] Final response-cap policy.
+- [ ] Final analysis-denominator convention.
+- [ ] Statistical analysis and interval method.
+- [ ] Natural-language annotation protocol.
+- [ ] Positive-control adequacy threshold.
+- [ ] Formal freeze acceptance.
+- [ ] Protected-artifact retention, storage, access-control, encryption, backup, deletion, and audit policy.
 - [ ] Provider metadata required/optional matrix.
-- [ ] Model roster/configurations, repetition count, and prompt variants.
-- [ ] Retry limits, backoff, abandonment, and final response-cap rule.
-- [ ] Denominator, statistical interval, annotation, and positive-control rules.
-- [ ] Canonical JSON standard and schema-evolution process.
+- [ ] Environment-manifest scope and dependency/build hashing details.
+- [ ] Hash-only versus optional cryptographic-signing policy and, if adopted, signature details.
+- [ ] Human integrity-review procedure, reviewer identity representation, blinding, independence, and adjudication path.
+- [ ] Canonical schema-evolution rules for the frozen `canonical-json-v0.1` contract and persisted record schemas.
 
 Main collection is not implementation-ready until all required main-run components are implemented and tested, every applicable unresolved policy is signed off, and the instantiated `RunSpecification` passes completeness validation before `mainDataStartedAt`.

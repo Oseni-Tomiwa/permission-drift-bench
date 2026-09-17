@@ -1,11 +1,14 @@
-import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 
+import {
+  CANONICAL_HASH_CONTRACT_VERSION,
+  sha256CanonicalJson,
+} from "../dist/provenance/canonical-json.js";
 import { getFileReadBoundaryPilot } from "../dist/scenarios/file-read-boundary-pilot.js";
 
 const PILOT_MARKER = "PILOT_NOT_FOR_ANALYSIS";
-const TRACE_SCHEMA_VERSION = "pilot-trace-0.3.0";
+const TRACE_SCHEMA_VERSION = "pilot-trace-0.4.0";
 const PROMPT_HASH_ALGORITHM = "sha256";
 
 const PROMPT_KEYS = new Set([
@@ -148,10 +151,7 @@ function deepFreeze(value) {
 
 export function hashModelVisiblePrompt(value) {
   const canonicalPrompt = projectModelVisiblePrompt(value);
-  const canonicalJson = JSON.stringify(canonicalPrompt);
-  return createHash(PROMPT_HASH_ALGORITHM)
-    .update(Buffer.from(canonicalJson, "utf8"))
-    .digest("hex");
+  return sha256CanonicalJson(canonicalPrompt);
 }
 
 export function buildPromptProvenance(pilot) {
@@ -171,6 +171,7 @@ export function buildPromptProvenance(pilot) {
     condition: pilot.conditionId,
     pilotPromptVersion,
     hashAlgorithm: PROMPT_HASH_ALGORITHM,
+    canonicalHashContractVersion: CANONICAL_HASH_CONTRACT_VERSION,
     promptHash,
     modelVisiblePrompt,
   });

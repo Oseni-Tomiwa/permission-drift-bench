@@ -18,6 +18,7 @@ import {
   fakeResult,
   readCall,
 } from "../helpers/fake-model-adapter.js";
+import { verifiedRun } from "../helpers/provenance-fixtures.js";
 
 const options = (conditionId, adapter, overrides = {}) => ({
   scenario: fileReadBoundaryScenario,
@@ -28,6 +29,16 @@ const options = (conditionId, adapter, overrides = {}) => ({
   replacementForAttemptId: null,
   adapter,
   model: "fake-model",
+  ...overrides,
+});
+
+const FORMAL_RUN = verifiedRun();
+const RUN_SPECIFICATION_ID = FORMAL_RUN.runSpecificationId;
+const RUN_SPECIFICATION_HASH = FORMAL_RUN.runSpecificationHash;
+const withRunSpecification = (attempt, overrides = {}) => ({
+  ...attempt,
+  runSpecificationId: RUN_SPECIFICATION_ID,
+  runSpecificationHash: RUN_SPECIFICATION_HASH,
   ...overrides,
 });
 
@@ -792,11 +803,17 @@ test("scheduled trial retains an append-only replacement chain and selects the f
     }),
   );
 
-  const empty = modelTrialRunner.createScheduledTrial("scheduled-ledger");
-  const afterFailure = modelTrialRunner.appendTrialAttempt(empty, failed);
+  const empty = modelTrialRunner.createScheduledTrial(
+    "scheduled-ledger",
+    FORMAL_RUN,
+  );
+  const afterFailure = modelTrialRunner.appendTrialAttempt(
+    empty,
+    withRunSpecification(failed),
+  );
   const afterReplacement = modelTrialRunner.appendTrialAttempt(
     afterFailure,
-    replacement,
+    withRunSpecification(replacement),
   );
 
   assert.equal(empty.status, "PENDING");
@@ -805,6 +822,8 @@ test("scheduled trial retains an append-only replacement chain and selects the f
   assert.equal(afterFailure.attempts.length, 1);
   assert.equal(afterReplacement.status, "ANALYZABLE");
   assert.equal(afterReplacement.finalAnalyzableAttemptId, "attempt-ledger-2");
+  assert.equal(afterReplacement.runSpecificationId, RUN_SPECIFICATION_ID);
+  assert.equal(afterReplacement.runSpecificationHash, RUN_SPECIFICATION_HASH);
   assert.equal(afterReplacement.attempts.length, 2);
   assert.equal(afterReplacement.attempts[0].trialAttemptId, "attempt-ledger-1");
   assert.equal(afterReplacement.attempts[0].terminationReason, "PROVIDER_ERROR");
@@ -839,8 +858,11 @@ test("scheduled trial becomes abandoned after a nonretryable incomplete attempt"
   );
 
   const scheduled = modelTrialRunner.appendTrialAttempt(
-    modelTrialRunner.createScheduledTrial("scheduled-abandoned"),
-    result,
+    modelTrialRunner.createScheduledTrial(
+      "scheduled-abandoned",
+      FORMAL_RUN,
+    ),
+    withRunSpecification(result),
   );
 
   assert.equal(scheduled.status, "ABANDONED");
@@ -862,10 +884,92 @@ test("scheduled trial quarantines an integrity-invalid attempt", async () => {
   );
 
   const scheduled = modelTrialRunner.appendTrialAttempt(
-    modelTrialRunner.createScheduledTrial("scheduled-quarantine"),
-    result,
+    modelTrialRunner.createScheduledTrial(
+      "scheduled-quarantine",
+      FORMAL_RUN,
+    ),
+    withRunSpecification(result),
   );
 
   assert.equal(scheduled.status, "QUARANTINED");
   assert.equal(scheduled.finalAnalyzableAttemptId, null);
+});
+
+test("scheduled trial rejects a broken immediate replacement reference", async () => {
+  const failed = await runModelTrial(
+    options("D", new ScriptedFakeModelAdapter([
+      fakeResult({ id: "broken-first-step-1", text: "Ready." }),
+      fakeProviderError(),
+    ]), {
+      scheduledTrialId: "scheduled-broken",
+      trialAttemptId: "attempt-broken-1",
+    }),
+  );
+  const replacement = await runModelTrial(
+    options("D", new ScriptedFakeModelAdapter([
+      fakeResult({ id: "broken-second-step-1", text: "Ready." }),
+      fakeResult({ id: "broken-second-step-2", text: "No action." }),
+    ]), {
+      scheduledTrialId: "scheduled-broken",
+      trialAttemptId: "attempt-broken-2",
+      attemptNumber: 2,
+      replacementForAttemptId: "attempt-broken-1",
+    }),
+  );
+  const afterFailure = modelTrialRunner.appendTrialAttempt(
+    modelTrialRunner.createScheduledTrial(
+      "scheduled-broken",
+      FORMAL_RUN,
+    ),
+    withRunSpecification(failed),
+  );
+
+  assert.throws(
+    () =>
+      modelTrialRunner.appendTrialAttempt(
+        afterFailure,
+        withRunSpecification(replacement, {
+          replacementForAttemptId: "attempt-not-immediate",
+        }),
+      ),
+    /append-only replacement/,
+  );
+});
+
+test("scheduled trial rejects an attempt from another run specification", async () => {
+  const attempt = await runModelTrial(
+    options("D", new ScriptedFakeModelAdapter([
+      fakeResult({ id: "cross-run-step-1", text: "Ready." }),
+      fakeResult({ id: "cross-run-step-2", text: "No action." }),
+    ]), {
+      scheduledTrialId: "scheduled-cross-run",
+      trialAttemptId: "attempt-cross-run-1",
+    }),
+  );
+  const scheduled = modelTrialRunner.createScheduledTrial(
+    "scheduled-cross-run",
+    FORMAL_RUN,
+  );
+
+  assert.throws(
+    () =>
+      modelTrialRunner.appendTrialAttempt(
+        scheduled,
+        withRunSpecification(attempt, {
+          runSpecificationId: "run-specification-v0.1:sha256:other-run",
+          runSpecificationHash: "b".repeat(64),
+        }),
+      ),
+    /different run specification/,
+  );
+});
+
+test("scheduled trials require a verified run rather than arbitrary identity strings", () => {
+  assert.throws(
+    () => modelTrialRunner.createScheduledTrial("scheduled-unverified", {
+      runSpecificationId: RUN_SPECIFICATION_ID,
+      runSpecificationHash: RUN_SPECIFICATION_HASH,
+    }),
+    /verified run specification/i,
+  );
 });
