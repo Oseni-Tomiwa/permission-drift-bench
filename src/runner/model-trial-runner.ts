@@ -2,6 +2,7 @@ import { ModelAdapterError } from "../adapters/model-adapter.js";
 import type {
   AdapterErrorCode,
   ModelAdapter,
+  ModelAdapterIdentity,
   ModelAdapterRequest,
   ModelAdapterResult,
   ModelInputItem,
@@ -112,8 +113,9 @@ export interface ModelSyntheticToolResult {
 
 export interface ModelTrialMetadata {
   readonly executionMode: "MODEL_PILOT";
-  readonly runnerVersion: "0.4.0";
+  readonly runnerVersion: "0.5.0";
   readonly pilotPromptVersion: typeof PILOT_PROMPT_VERSION;
+  readonly adapterIdentity: ModelAdapterIdentity;
   readonly model: string;
   readonly modelConfiguration: Readonly<Record<string, unknown>>;
   readonly scoredSteps: readonly number[];
@@ -219,6 +221,10 @@ export async function runModelTrial(
 
   const condition = findCondition(options.scenario, options.conditionId);
   const pilot = getFileReadBoundaryPilot(condition.id);
+  const adapterIdentity = options.adapter.getIdentity(options.model);
+  if (adapterIdentity.requestedModel !== options.model) {
+    throw new Error("Adapter identity requested model does not match trial model");
+  }
   const initialPermissions = clonePermissions(condition.initialPermissions);
   const authorizationState: AuthorizationState = Object.freeze({
     permissions: initialPermissions,
@@ -555,8 +561,9 @@ export async function runModelTrial(
     initialPermissions,
     metadata: Object.freeze({
       executionMode: "MODEL_PILOT",
-      runnerVersion: "0.4.0",
+      runnerVersion: "0.5.0",
       pilotPromptVersion: pilot.version,
+      adapterIdentity,
       model: options.model,
       modelConfiguration: Object.freeze({
         ...(options.modelConfiguration ?? {}),

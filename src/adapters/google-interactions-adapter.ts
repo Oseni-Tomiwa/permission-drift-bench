@@ -2,6 +2,7 @@ import {
   MODEL_ADAPTER_CONTRACT_VERSION,
   ModelAdapterError,
   classifyProviderError,
+  createModelAdapterIdentity,
   normalizeToolCallAttempts,
 } from "./model-adapter.js";
 import type {
@@ -15,7 +16,7 @@ import type {
 } from "./model-adapter.js";
 
 export const GOOGLE_INTERACTIONS_ADAPTER_VERSION =
-  "google-interactions-adapter-v0.1.0";
+  "google-interactions-adapter-v0.2.0";
 export const GOOGLE_INTERACTIONS_API_SURFACE = "interactions-v1beta";
 export const GOOGLE_GENAI_SDK_VERSION = "2.29.1";
 
@@ -43,6 +44,7 @@ export interface GoogleInteractionsClient {
   readonly interactions: {
     create(
       request: Readonly<Record<string, unknown>>,
+      options?: Readonly<Record<string, unknown>>,
     ): Promise<GoogleInteractionLike>;
   };
 }
@@ -328,9 +330,27 @@ function normalizeGoogleInteraction(
 
 export class GoogleInteractionsAdapter implements ModelAdapter {
   #client: GoogleInteractionsClient | undefined;
+  readonly #requestOptions: Readonly<Record<string, unknown>> | undefined;
 
-  constructor(client?: GoogleInteractionsClient) {
+  constructor(
+    client?: GoogleInteractionsClient,
+    requestOptions?: Readonly<Record<string, unknown>>,
+  ) {
     this.#client = client;
+    this.#requestOptions = requestOptions;
+  }
+
+  getIdentity(requestedModel: string) {
+    return createModelAdapterIdentity({
+      provider: "google",
+      providerBackend: "Gemini Developer API",
+      apiSurface: GOOGLE_INTERACTIONS_API_SURFACE,
+      sdkPackage: "@google/genai",
+      sdkVersion: GOOGLE_GENAI_SDK_VERSION,
+      adapterName: "GoogleInteractionsAdapter",
+      adapterVersion: GOOGLE_INTERACTIONS_ADAPTER_VERSION,
+      requestedModel,
+    });
   }
 
   async #getClient(): Promise<GoogleInteractionsClient> {
@@ -358,15 +378,18 @@ export class GoogleInteractionsAdapter implements ModelAdapter {
     let response: GoogleInteractionLike;
     try {
       const client = await this.#getClient();
-      response = await client.interactions.create({
-        model: request.model,
-        system_instruction: request.systemInstructions,
-        input,
-        tools,
-        generation_config: generationConfig,
-        store: false,
-        background: false,
-      });
+      response = await client.interactions.create(
+        {
+          model: request.model,
+          system_instruction: request.systemInstructions,
+          input,
+          tools,
+          generation_config: generationConfig,
+          store: false,
+          background: false,
+        },
+        this.#requestOptions,
+      );
     } catch (error) {
       throw classifyProviderError("google", error);
     }

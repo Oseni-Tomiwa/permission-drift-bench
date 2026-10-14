@@ -97,6 +97,19 @@ export class ScriptedFakeModelAdapter {
     this.requests = [];
   }
 
+  getIdentity(requestedModel) {
+    return Object.freeze({
+      provider: "fake",
+      providerBackend: "synthetic-test-provider",
+      apiSurface: "fixture-v1",
+      sdkPackage: "none",
+      sdkVersion: "test",
+      adapterName: "ScriptedFakeModelAdapter",
+      adapterVersion: "scripted-fake-adapter-v1",
+      requestedModel,
+    });
+  }
+
   async generate(request) {
     this.requests.push({ ...request, input: [...request.input] });
     if (this.responses.length === 0) {

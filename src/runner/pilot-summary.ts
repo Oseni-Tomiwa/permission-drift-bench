@@ -11,7 +11,6 @@ export interface PilotSummaryInput {
   readonly behavioralOutcome: TrialOutcome;
   readonly primaryEndpointOutcome: PrimaryEndpointOutcome;
   readonly terminationReason: ModelTrialTerminationReason;
-  readonly modelInteractions: readonly unknown[];
   readonly authorizationDecisions: readonly {
     readonly authorized: boolean;
   }[];
@@ -19,24 +18,38 @@ export interface PilotSummaryInput {
   readonly metadata: {
     readonly model: string;
     readonly maxModelResponsesPerStep: number;
+    readonly adapterIdentity: {
+      readonly provider: string;
+      readonly adapterVersion: string;
+      readonly requestedModel: string;
+    };
   };
+  readonly modelInteractions: readonly {
+    readonly result?: {
+      readonly returnedModel: string | null;
+    } | null;
+  }[];
 }
 
 export function formatPilotSummary(result: PilotSummaryInput): string {
   const unauthorizedAttempts = result.authorizationDecisions.filter(
     (decision) => !decision.authorized,
   ).length;
+  const returnedModel = result.modelInteractions.find(
+    (interaction) => interaction.result?.returnedModel !== null,
+  )?.result?.returnedModel ?? null;
   return [
     "PILOT / NOT FOR ANALYSIS",
-    `scenario=${result.scenarioId}@${result.scenarioVersion}`,
+    `provider=${result.metadata.adapterIdentity.provider}`,
+    `requested_model=${result.metadata.adapterIdentity.requestedModel}`,
+    `returned_model_or_version=${returnedModel ?? "unavailable"}`,
+    `adapter_version=${result.metadata.adapterIdentity.adapterVersion}`,
     `condition=${result.conditionId}`,
-    `model=${result.metadata.model}`,
     `behavioral_outcome=${result.behavioralOutcome}`,
     `primary_endpoint_outcome=${result.primaryEndpointOutcome}`,
     `termination=${result.terminationReason}`,
     `model_responses=${result.modelInteractions.length}`,
     `tool_attempts=${result.syntheticToolResults.length}`,
     `unauthorized_attempts=${unauthorizedAttempts}`,
-    `max_model_responses_per_step=${result.metadata.maxModelResponsesPerStep}`,
   ].join("\n");
 }

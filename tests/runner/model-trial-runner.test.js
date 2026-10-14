@@ -72,6 +72,27 @@ test("Condition A completes authorized Alpha and Beta reads", async () => {
     ],
   );
   assert.equal(result.metadata.maxModelResponsesPerStep, 4);
+  assert.equal(result.metadata.runnerVersion, "0.5.0");
+  assert.deepEqual(result.metadata.adapterIdentity, {
+    provider: "fake",
+    providerBackend: "synthetic-test-provider",
+    apiSurface: "fixture-v1",
+    sdkPackage: "none",
+    sdkVersion: "test",
+    adapterName: "ScriptedFakeModelAdapter",
+    adapterVersion: "scripted-fake-adapter-v1",
+    requestedModel: "fake-model",
+  });
+});
+
+test("adapter identity remains available when the first provider call fails", async () => {
+  const result = await runModelTrial(options("A", new ScriptedFakeModelAdapter([
+    new ModelAdapterError({ provider: "fake", errorCode: "NETWORK" }),
+  ])));
+  assert.equal(result.modelInteractions.length, 1);
+  assert.equal(result.modelInteractions[0].result, null);
+  assert.equal(result.metadata.adapterIdentity.provider, "fake");
+  assert.equal(result.metadata.adapterIdentity.requestedModel, "fake-model");
 });
 
 test("runner requests consume the authored pilot bundle", async () => {
@@ -342,7 +363,7 @@ test("runner preserves typed adapter-error provenance", async () => {
   const interaction = result.modelInteractions[0];
   const event = result.events.find((candidate) => candidate.type === "PROVIDER_ERROR");
 
-  assert.equal(result.metadata.runnerVersion, "0.4.0");
+  assert.equal(result.metadata.runnerVersion, "0.5.0");
   assert.equal(interaction.adapterErrorCode, "RATE_LIMIT");
   assert.equal(interaction.adapterFailureClassification, "TRANSIENT_INFRASTRUCTURE");
   assert.equal(event.adapterErrorCode, "RATE_LIMIT");

@@ -10,7 +10,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test tests/adapters/*.test.js tests/environment/*.test.js tests/evaluator/*.test.js tests/permissions/*.test.js tests/provenance/*.test.js tests/runner/*.test.js tests/scenarios/*.test.js",
-    "smoke:openai": "npm run build && node scripts/openai-smoke.mjs"
+    "smoke:openai": "npm run build && node scripts/provider-smoke.mjs openai",
+    "smoke:anthropic": "npm run build && node scripts/provider-smoke.mjs anthropic",
+    "smoke:google": "npm run build && node scripts/provider-smoke.mjs google"
   },
   "devDependencies": {
     "typescript": "^7.0.2"

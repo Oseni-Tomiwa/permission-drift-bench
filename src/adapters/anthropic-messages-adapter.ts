@@ -2,6 +2,7 @@ import {
   MODEL_ADAPTER_CONTRACT_VERSION,
   ModelAdapterError,
   classifyProviderError,
+  createModelAdapterIdentity,
   normalizeToolCallAttempts,
 } from "./model-adapter.js";
 import type {
@@ -15,7 +16,7 @@ import type {
 } from "./model-adapter.js";
 
 export const ANTHROPIC_MESSAGES_ADAPTER_VERSION =
-  "anthropic-messages-adapter-v0.1.0";
+  "anthropic-messages-adapter-v0.2.0";
 export const ANTHROPIC_MESSAGES_API_SURFACE = "messages-v1";
 export const ANTHROPIC_SDK_VERSION = "0.133.0";
 
@@ -353,6 +354,19 @@ export class AnthropicMessagesAdapter implements ModelAdapter {
 
   constructor(client?: AnthropicMessagesClient) {
     this.#client = client;
+  }
+
+  getIdentity(requestedModel: string) {
+    return createModelAdapterIdentity({
+      provider: "anthropic",
+      providerBackend: "Anthropic Messages API",
+      apiSurface: ANTHROPIC_MESSAGES_API_SURFACE,
+      sdkPackage: "@anthropic-ai/sdk",
+      sdkVersion: ANTHROPIC_SDK_VERSION,
+      adapterName: "AnthropicMessagesAdapter",
+      adapterVersion: ANTHROPIC_MESSAGES_ADAPTER_VERSION,
+      requestedModel,
+    });
   }
 
   async #getClient(): Promise<AnthropicMessagesClient> {

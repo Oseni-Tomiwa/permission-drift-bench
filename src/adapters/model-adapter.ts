@@ -5,8 +5,39 @@ import type {
 } from "../schemas/trial-policy.js";
 import { canonicalJson } from "../provenance/canonical-json.js";
 import type { CanonicalJsonValue } from "../provenance/canonical-json.js";
+import {
+  APIConnectionError as OpenAIConnectionError,
+  APIConnectionTimeoutError as OpenAITimeoutError,
+} from "openai";
+import {
+  APIConnectionError as AnthropicConnectionError,
+  APIConnectionTimeoutError as AnthropicTimeoutError,
+} from "@anthropic-ai/sdk";
+import { ApiError as GoogleApiError } from "@google/genai";
 
-export const MODEL_ADAPTER_CONTRACT_VERSION = "model-adapter-v0.2.0";
+export const MODEL_ADAPTER_CONTRACT_VERSION = "model-adapter-v0.3.0";
+
+export interface ModelAdapterIdentity {
+  readonly provider: string;
+  readonly providerBackend: string;
+  readonly apiSurface: string;
+  readonly sdkPackage: string;
+  readonly sdkVersion: string;
+  readonly adapterName: string;
+  readonly adapterVersion: string;
+  readonly requestedModel: string;
+}
+
+export function createModelAdapterIdentity(
+  identity: ModelAdapterIdentity,
+): ModelAdapterIdentity {
+  for (const [key, value] of Object.entries(identity)) {
+    if (typeof value !== "string" || value.length === 0) {
+      throw new TypeError(`Adapter identity field ${key} must be non-empty`);
+    }
+  }
+  return Object.freeze({ ...identity });
+}
 
 export type ModelToolChoice = "auto" | "none" | "required";
 
@@ -135,18 +166,54 @@ function errorRecord(error: unknown): Record<string, unknown> {
     : {};
 }
 
+function errorChain(error: unknown): readonly unknown[] {
+  const chain: unknown[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  while (current !== null && current !== undefined && !seen.has(current)) {
+    chain.push(current);
+    seen.add(current);
+    current = errorRecord(current).cause;
+  }
+  return chain;
+}
+
+function numericStatus(chain: readonly unknown[]): number | null {
+  for (const error of chain) {
+    const record = errorRecord(error);
+    for (const value of [record.status, record.statusCode]) {
+      if (typeof value === "number") return value;
+      if (typeof value === "string" && /^\d{3}$/.test(value)) {
+        return Number(value);
+      }
+    }
+  }
+  return null;
+}
+
 export function classifyProviderError(
   provider: string,
   cause: unknown,
 ): ModelAdapterError {
-  const record = errorRecord(cause);
-  const status = typeof record.status === "number" ? record.status : null;
-  const name =
-    typeof record.name === "string" ? record.name.toLowerCase() : "";
-  const code =
-    typeof record.code === "string" ? record.code.toUpperCase() : "";
+  const chain = errorChain(cause);
+  const status = numericStatus(chain);
+  const names = chain.map((error) => {
+    const record = errorRecord(error);
+    return typeof record.name === "string" ? record.name.toLowerCase() : "";
+  });
+  const codes = chain.flatMap((error) => {
+    const value = errorRecord(error).code;
+    return typeof value === "string" ? [value.toUpperCase()] : [];
+  });
+  const hasInstance = (constructor: abstract new (...args: never[]) => unknown) =>
+    chain.some((error) => error instanceof constructor);
 
-  if (name.includes("timeout") || code === "ETIMEDOUT") {
+  if (
+    hasInstance(OpenAITimeoutError) ||
+    hasInstance(AnthropicTimeoutError) ||
+    names.some((name) => name.includes("timeout")) ||
+    codes.includes("ETIMEDOUT")
+  ) {
     return new ModelAdapterError({
       provider,
       errorCode: "TIMEOUT",
@@ -188,7 +255,12 @@ export function classifyProviderError(
     });
   }
   if (
-    ["ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"].includes(code)
+    hasInstance(OpenAIConnectionError) ||
+    hasInstance(AnthropicConnectionError) ||
+    (provider === "google" && chain.some((error) => error instanceof GoogleApiError) && status === null) ||
+    codes.some((code) =>
+      ["ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "ECONNABORTED"].includes(code),
+    )
   ) {
     return new ModelAdapterError({
       provider,
@@ -300,6 +372,7 @@ export interface ModelAdapterResult {
 }
 
 export interface ModelAdapter {
+  getIdentity(requestedModel: string): ModelAdapterIdentity;
   generate(request: ModelAdapterRequest): Promise<ModelAdapterResult>;
 }
 

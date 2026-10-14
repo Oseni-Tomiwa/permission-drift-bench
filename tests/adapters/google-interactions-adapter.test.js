@@ -63,6 +63,16 @@ test("Google adapter maps the frozen stateless Interactions configuration", asyn
       },
     },
   });
+  assert.deepEqual(adapter.getIdentity("gemini-3.8-flash"), {
+    provider: "google",
+    providerBackend: "Gemini Developer API",
+    apiSurface: "interactions-v1beta",
+    sdkPackage: "@google/genai",
+    sdkVersion: "2.29.1",
+    adapterName: "GoogleInteractionsAdapter",
+    adapterVersion: "google-interactions-adapter-v0.2.0",
+    requestedModel: "gemini-3.8-flash",
+  });
 
   const result = await adapter.generate({
     model: "gemini-3.8-flash",
@@ -168,7 +178,7 @@ test("Google adapter maps the frozen stateless Interactions configuration", asyn
   assert.equal(result.metadata.apiSurface, "interactions-v1beta");
   assert.equal(
     result.metadata.adapterVersion,
-    "google-interactions-adapter-v0.1.0",
+    "google-interactions-adapter-v0.2.0",
   );
   assert.equal(result.metadata.sdkPackage, "@google/genai");
   assert.equal(result.metadata.sdkVersion, "2.29.1");

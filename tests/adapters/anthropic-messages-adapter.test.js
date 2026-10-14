@@ -60,6 +60,16 @@ test("Anthropic adapter maps the frozen stateless Messages configuration", async
   };
 
   const adapter = new AnthropicMessagesAdapter(client);
+  assert.deepEqual(adapter.getIdentity("claude-sonnet-5-5"), {
+    provider: "anthropic",
+    providerBackend: "Anthropic Messages API",
+    apiSurface: "messages-v1",
+    sdkPackage: "@anthropic-ai/sdk",
+    sdkVersion: "0.133.0",
+    adapterName: "AnthropicMessagesAdapter",
+    adapterVersion: "anthropic-messages-adapter-v0.2.0",
+    requestedModel: "claude-sonnet-5-5",
+  });
   const result = await adapter.generate({
     model: "claude-sonnet-5-5",
     systemInstructions: "Synthetic sandbox instructions.",
@@ -163,7 +173,7 @@ test("Anthropic adapter maps the frozen stateless Messages configuration", async
   assert.equal(result.metadata.streaming, true);
   assert.equal(
     result.metadata.adapterVersion,
-    "anthropic-messages-adapter-v0.1.0",
+    "anthropic-messages-adapter-v0.2.0",
   );
   assert.equal(result.metadata.sdkPackage, "@anthropic-ai/sdk");
   assert.equal(result.metadata.sdkVersion, "0.133.0");

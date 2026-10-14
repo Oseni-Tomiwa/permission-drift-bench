@@ -8,7 +8,7 @@ import {
 import { getFileReadBoundaryPilot } from "../dist/scenarios/file-read-boundary-pilot.js";
 
 const PILOT_MARKER = "PILOT_NOT_FOR_ANALYSIS";
-const TRACE_SCHEMA_VERSION = "pilot-trace-0.5.0";
+const TRACE_SCHEMA_VERSION = "pilot-trace-0.6.0";
 const PROMPT_HASH_ALGORITHM = "sha256";
 
 const PROMPT_KEYS = new Set([
@@ -281,6 +281,73 @@ function buildEvent(event) {
   }
 }
 
+const SAFE_USAGE_KEYS = new Set([
+  "inputTokens",
+  "outputTokens",
+  "totalTokens",
+  "input_tokens",
+  "output_tokens",
+  "total_tokens",
+  "cache_creation_input_tokens",
+  "cache_read_input_tokens",
+  "total_input_tokens",
+  "total_output_tokens",
+  "total_cached_tokens",
+  "thoughts_token_count",
+]);
+
+function projectUsage(value) {
+  if (!isRecord(value)) return null;
+  const usage = {};
+  for (const key of Object.keys(value).sort()) {
+    if (SAFE_USAGE_KEYS.has(key) && typeof value[key] === "number") {
+      usage[key] = value[key];
+    }
+  }
+  return usage;
+}
+
+function providerItemCategory(value) {
+  if (isRecord(value) && typeof value.type === "string") {
+    return redactText(value.type).slice(0, 120);
+  }
+  return Array.isArray(value) ? "array" : typeof value;
+}
+
+function projectOrderedOutput(item, result) {
+  if (item.kind === "ASSISTANT_TEXT") {
+    return {
+      index: item.index,
+      kind: item.kind,
+      text: redactText(item.text),
+    };
+  }
+  if (item.kind === "TOOL_CALL") {
+    const call = result.toolCalls[item.toolCallIndex];
+    return {
+      index: item.index,
+      kind: item.kind,
+      toolCallIndex: item.toolCallIndex,
+      providerCallId: call?.providerCallId ?? null,
+      tool: call?.toolName ?? null,
+    };
+  }
+  if (item.kind === "PROVIDER_STATE") {
+    return {
+      index: item.index,
+      kind: item.kind,
+      provider: item.provider,
+      category: providerItemCategory(item.value),
+    };
+  }
+  return {
+    index: item.index,
+    kind: item.kind,
+    provider: item.provider,
+    category: providerItemCategory(item.rawProviderItem),
+  };
+}
+
 export function buildPilotTrace(result, options = {}) {
   const timestamp = options.timestamp ?? new Date();
   if (!(timestamp instanceof Date) || Number.isNaN(timestamp.valueOf())) {
@@ -302,12 +369,23 @@ export function buildPilotTrace(result, options = {}) {
     responseIndexWithinStep: interaction.responseIndexWithinStep,
     invocationId: interaction.invocationId,
     providerResponseId: interaction.responseId,
+    provider: interaction.result?.provider ?? result.metadata.adapterIdentity.provider,
+    requestedModel:
+      interaction.result?.requestedModel ??
+      result.metadata.adapterIdentity.requestedModel,
+    returnedModelOrVersion: interaction.result?.returnedModel ?? null,
     status: interaction.result?.status ?? null,
+    responseStatus: interaction.result?.responseStatus ?? null,
     assistantText:
       interaction.result?.assistantText === null ||
       interaction.result?.assistantText === undefined
         ? null
         : redactText(interaction.result.assistantText),
+    assistantTextSegments: (interaction.result?.assistantTextSegments ?? []).map(redactText),
+    orderedOutput: (interaction.result?.orderedOutput ?? []).map((item) =>
+      projectOrderedOutput(item, interaction.result),
+    ),
+    usage: projectUsage(interaction.result?.usage),
     toolCalls: (interaction.result?.toolCalls ?? []).map((toolCall) => {
       const correlation = interaction.toolCallCorrelations.find(
         (candidate) =>
@@ -374,6 +452,10 @@ export function buildPilotTrace(result, options = {}) {
   const promptProvenance = buildPromptProvenance(
     getFileReadBoundaryPilot(result.conditionId),
   );
+  const adapterIdentity = result.metadata.adapterIdentity;
+  const returnedModelOrVersion = result.modelInteractions.find(
+    (interaction) => interaction.result?.returnedModel !== null,
+  )?.result?.returnedModel ?? null;
 
   return {
     pilotMarker: PILOT_MARKER,
@@ -387,6 +469,17 @@ export function buildPilotTrace(result, options = {}) {
     pilotPromptVersion: promptProvenance.pilotPromptVersion,
     promptProvenance,
     modelId: redactText(result.metadata.model),
+    providerIdentity: {
+      provider: adapterIdentity.provider,
+      providerBackend: adapterIdentity.providerBackend,
+      requestedModel: adapterIdentity.requestedModel,
+      returnedModelOrVersion,
+      adapterName: adapterIdentity.adapterName,
+      adapterVersion: adapterIdentity.adapterVersion,
+      sdkPackage: adapterIdentity.sdkPackage,
+      sdkVersion: adapterIdentity.sdkVersion,
+      apiSurface: adapterIdentity.apiSurface,
+    },
     scheduledTrialId: redactText(result.scheduledTrialId),
     trialAttemptId: redactText(result.trialAttemptId),
     attemptNumber: result.attemptNumber,

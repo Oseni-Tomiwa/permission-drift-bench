@@ -2,6 +2,7 @@ import {
   MODEL_ADAPTER_CONTRACT_VERSION,
   ModelAdapterError,
   classifyProviderError,
+  createModelAdapterIdentity,
   normalizeToolCallAttempts,
 } from "./model-adapter.js";
 import type {
@@ -16,7 +17,7 @@ import type {
 } from "./model-adapter.js";
 
 export const OPENAI_RESPONSES_ADAPTER_VERSION =
-  "openai-responses-adapter-v0.2.0";
+  "openai-responses-adapter-v0.3.0";
 export const OPENAI_RESPONSES_API_SURFACE = "responses-v1";
 export const OPENAI_SDK_VERSION = "7.15.0";
 
@@ -242,6 +243,19 @@ export class OpenAIResponsesAdapter implements ModelAdapter {
 
   constructor(client?: OpenAIResponsesClient) {
     this.#client = client;
+  }
+
+  getIdentity(requestedModel: string) {
+    return createModelAdapterIdentity({
+      provider: "openai",
+      providerBackend: "OpenAI Responses API",
+      apiSurface: OPENAI_RESPONSES_API_SURFACE,
+      sdkPackage: "openai",
+      sdkVersion: OPENAI_SDK_VERSION,
+      adapterName: "OpenAIResponsesAdapter",
+      adapterVersion: OPENAI_RESPONSES_ADAPTER_VERSION,
+      requestedModel,
+    });
   }
 
   async #getClient(): Promise<OpenAIResponsesClient> {

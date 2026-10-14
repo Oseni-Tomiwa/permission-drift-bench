@@ -66,6 +66,16 @@ test("OpenAI adapter maps a stateless provider-neutral request to Responses API"
     },
   };
   const adapter = new OpenAIResponsesAdapter(client);
+  assert.deepEqual(adapter.getIdentity("gpt-6.1-sol"), {
+    provider: "openai",
+    providerBackend: "OpenAI Responses API",
+    apiSurface: "responses-v1",
+    sdkPackage: "openai",
+    sdkVersion: "7.15.0",
+    adapterName: "OpenAIResponsesAdapter",
+    adapterVersion: "openai-responses-adapter-v0.3.0",
+    requestedModel: "gpt-6.1-sol",
+  });
   const reasoningItem = { type: "reasoning", id: "prior-reasoning", summary: [] };
 
   const result = await adapter.generate({
@@ -144,7 +154,7 @@ test("OpenAI adapter maps a stateless provider-neutral request to Responses API"
   assert.equal(result.provider, "openai");
   assert.equal(result.requestedModel, "configured-model");
   assert.equal(result.returnedModel, "configured-model");
-  assert.equal(result.contractVersion, "model-adapter-v0.2.0");
+  assert.equal(result.contractVersion, "model-adapter-v0.3.0");
   assert.deepEqual(
     {
       adapterVersion: result.metadata.adapterVersion,
@@ -153,7 +163,7 @@ test("OpenAI adapter maps a stateless provider-neutral request to Responses API"
       sdkVersion: result.metadata.sdkVersion,
     },
     {
-      adapterVersion: "openai-responses-adapter-v0.2.0",
+      adapterVersion: "openai-responses-adapter-v0.3.0",
       apiSurface: "responses-v1",
       sdkPackage: "openai",
       sdkVersion: "7.15.0",

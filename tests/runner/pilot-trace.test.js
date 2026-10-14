@@ -78,7 +78,7 @@ test("pilot trace preserves ordered inspectable behavior through an allowlisted 
   });
 
   assert.equal(trace.pilotMarker, "PILOT_NOT_FOR_ANALYSIS");
-  assert.equal(trace.traceSchemaVersion, "pilot-trace-0.5.0");
+  assert.equal(trace.traceSchemaVersion, "pilot-trace-0.6.0");
   assert.equal(trace.timestamp, "2026-09-15T08:30:00.000Z");
   assert.deepEqual(trace.scenario, {
     id: "scope.file-read-boundary",
@@ -87,6 +87,17 @@ test("pilot trace preserves ordered inspectable behavior through an allowlisted 
   assert.equal(trace.condition, "B");
   assert.equal(trace.pilotPromptVersion, "pilot-0.2.0");
   assert.equal(trace.modelId, "fake-model");
+  assert.deepEqual(trace.providerIdentity, {
+    provider: "fake",
+    providerBackend: "synthetic-test-provider",
+    requestedModel: "fake-model",
+    returnedModelOrVersion: "fake-model",
+    adapterName: "ScriptedFakeModelAdapter",
+    adapterVersion: "scripted-fake-adapter-v1",
+    sdkPackage: "none",
+    sdkVersion: "test",
+    apiSurface: "fixture-v1",
+  });
   assert.equal(trace.scheduledTrialId, "scheduled-pilot-B-test");
   assert.equal(trace.trialAttemptId, "pilot-B-test");
   assert.equal(trace.attemptNumber, 1);
@@ -130,6 +141,20 @@ test("pilot trace preserves ordered inspectable behavior through an allowlisted 
       ],
     ],
   );
+  assert.deepEqual(trace.modelResponses[0].assistantTextSegments, []);
+  assert.deepEqual(trace.modelResponses[0].orderedOutput, [
+    {
+      index: 0,
+      kind: "TOOL_CALL",
+      toolCallIndex: 0,
+      providerCallId: "call-alpha",
+      tool: "read_file",
+    },
+  ]);
+  assert.deepEqual(trace.modelResponses[0].usage, {
+    inputTokens: 10,
+    outputTokens: 5,
+  });
 
   assert.deepEqual(trace.modelResponses[0].toolCalls[0], {
     benchmarkAttemptId: 1,
@@ -183,6 +208,54 @@ test("pilot trace preserves ordered inspectable behavior through an allowlisted 
   assert.equal(serialized.includes("environment"), false);
   assert.equal(serialized.includes("credential"), false);
   assert.equal(serialized.includes("providerMetadata"), false);
+});
+
+test("pilot trace reduces unknown provider output to safe category metadata", async () => {
+  const unknown = fakeResult({ id: "unknown-output", text: "Safe text." });
+  unknown.orderedOutput.push({
+    index: 1,
+    kind: "UNKNOWN_PROVIDER_ITEM",
+    provider: "fake",
+    rawProviderItem: {
+      type: "future_secret_block",
+      apiKey: SENSITIVE_VALUE,
+      headers: { authorization: `Bearer ${SENSITIVE_VALUE}` },
+    },
+  });
+  unknown.usage = {
+    inputTokens: 3,
+    outputTokens: 2,
+    credential: SENSITIVE_VALUE,
+  };
+  const result = await runModelTrial({
+    scenario: fileReadBoundaryScenario,
+    conditionId: "D",
+    scheduledTrialId: "scheduled-unknown-output",
+    trialAttemptId: "unknown-output-attempt",
+    attemptNumber: 1,
+    replacementForAttemptId: null,
+    adapter: new ScriptedFakeModelAdapter([
+      unknown,
+      fakeResult({ id: "step-2", text: "No action." }),
+    ]),
+    model: "fake-model",
+  });
+
+  const trace = buildPilotTrace(result);
+  assert.deepEqual(trace.modelResponses[0].orderedOutput[1], {
+    index: 1,
+    kind: "UNKNOWN_PROVIDER_ITEM",
+    provider: "fake",
+    category: "future_secret_block",
+  });
+  assert.deepEqual(trace.modelResponses[0].usage, {
+    inputTokens: 3,
+    outputTokens: 2,
+  });
+  const serialized = JSON.stringify(trace);
+  assert.equal(serialized.includes(SENSITIVE_VALUE), false);
+  assert.equal(serialized.includes("apiKey"), false);
+  assert.equal(serialized.includes("headers"), false);
 });
 
 test("pilot trace preserves immutable canonical prompt provenance", async () => {
