@@ -83,9 +83,9 @@ test("OpenAI adapter maps a stateless provider-neutral request to Responses API"
     tools: [READ_FILE_TOOL_DEFINITION],
     toolChoice: "auto",
     configuration: {
-      temperature: 0.2,
-      topP: 0.9,
-      maxOutputTokens: 100,
+      reasoning: { effort: "medium" },
+      maxOutputTokens: 32768,
+      parallelToolCalls: false,
     },
   });
 
@@ -106,20 +106,31 @@ test("OpenAI adapter maps a stateless provider-neutral request to Responses API"
       tool_choice: "auto",
       store: false,
       include: ["reasoning.encrypted_content"],
-      temperature: 0.2,
-      top_p: 0.9,
-      max_output_tokens: 100,
+      reasoning: { effort: "medium" },
+      max_output_tokens: 32768,
+      parallel_tool_calls: false,
     },
   ]);
   assert.equal("previous_response_id" in requests[0], false);
   assert.equal("conversation" in requests[0], false);
   assert.strictEqual(result.rawResponse, rawResponse);
   assert.equal(result.assistantText, "I used the available results.");
+  assert.deepEqual(result.assistantTextSegments, [
+    "I used the available results.",
+  ]);
   assert.deepEqual(
-    result.toolCalls.map((call) => [call.callId, call.index]),
+    result.orderedOutput.map((item) => item.kind),
+    ["PROVIDER_STATE", "TOOL_CALL", "ASSISTANT_TEXT", "TOOL_CALL"],
+  );
+  assert.deepEqual(
+    result.toolCalls.map((call) => [
+      call.providerCallId,
+      call.index,
+      call.argumentStatus,
+    ]),
     [
-      ["call-1", 1],
-      ["call-2", 3],
+      ["call-1", 1, "VALID"],
+      ["call-2", 3, "VALID"],
     ],
   );
   assert.deepEqual(
@@ -128,9 +139,62 @@ test("OpenAI adapter maps a stateless provider-neutral request to Responses API"
   );
   assert.equal(result.responseId, "resp-test");
   assert.equal(result.status, "completed");
+  assert.equal(result.responseStatus, "COMPLETED");
   assert.deepEqual(result.usage, rawResponse.usage);
   assert.equal(result.provider, "openai");
-  assert.equal(result.model, "configured-model");
+  assert.equal(result.requestedModel, "configured-model");
+  assert.equal(result.returnedModel, "configured-model");
+  assert.equal(result.contractVersion, "model-adapter-v0.2.0");
+  assert.deepEqual(
+    {
+      adapterVersion: result.metadata.adapterVersion,
+      apiSurface: result.metadata.apiSurface,
+      sdkPackage: result.metadata.sdkPackage,
+      sdkVersion: result.metadata.sdkVersion,
+    },
+    {
+      adapterVersion: "openai-responses-adapter-v0.2.0",
+      apiSurface: "responses-v1",
+      sdkPackage: "openai",
+      sdkVersion: "7.15.0",
+    },
+  );
+  assert.equal(result.metadata.store, false);
+  assert.equal(result.metadata.previousResponseId, "OMITTED");
+  assert.equal(result.metadata.seed, "OMITTED");
+  assert.equal(result.metadata.builtInTools, false);
+});
+
+test("OpenAI assistantText is only the ordered segment aggregation", async () => {
+  const adapter = new OpenAIResponsesAdapter({
+    responses: {
+      async create() {
+        return {
+          id: "resp-text-aggregation",
+          status: "completed",
+          model: "configured-model",
+          output_text: "provider convenience text",
+          output: [
+            {
+              type: "message",
+              content: [{ type: "output_text", text: "ordered text" }],
+            },
+          ],
+        };
+      },
+    },
+  });
+
+  const result = await adapter.generate({
+    model: "configured-model",
+    systemInstructions: "Synthetic sandbox instructions.",
+    input: [{ type: "message", role: "user", content: "Continue." }],
+    tools: [READ_FILE_TOOL_DEFINITION],
+    toolChoice: "auto",
+  });
+
+  assert.deepEqual(result.assistantTextSegments, ["ordered text"]);
+  assert.equal(result.assistantText, "ordered text");
 });
 
 test("OpenAI adapter rejects foreign provider state without making a request", async () => {
@@ -157,6 +221,7 @@ test("OpenAI adapter rejects foreign provider state without making a request", a
       assert.equal(error.terminationReason, "ADAPTER_ERROR");
       assert.equal(error.failureClassification, "INTEGRITY_CORRUPTION");
       assert.equal(error.integrityFailureCode, "ADAPTER_SEMANTIC_CORRUPTION");
+      assert.equal(error.errorCode, "FOREIGN_CONTINUATION_STATE");
       return true;
     },
   );
@@ -188,6 +253,7 @@ test("OpenAI adapter rejects unimplemented configuration instead of ignoring it"
       assert.equal(error.terminationReason, "ADAPTER_ERROR");
       assert.equal(error.failureClassification, "INTEGRITY_CORRUPTION");
       assert.equal(error.integrityFailureCode, "WRONG_MODEL_CONFIGURATION");
+      assert.equal(error.errorCode, "UNSUPPORTED_CONFIGURATION");
       return true;
     },
   );
@@ -216,10 +282,86 @@ test("OpenAI adapter classifies provider request failures as transient infrastru
       assert.equal(error.terminationReason, "PROVIDER_ERROR");
       assert.equal(error.failureClassification, "TRANSIENT_INFRASTRUCTURE");
       assert.equal(error.integrityFailureCode, null);
+      assert.equal(error.errorCode, "UNKNOWN_PROVIDER_ERROR");
       return true;
     },
   );
 });
+
+for (const fixture of [
+  {
+    name: "timeout",
+    error: Object.assign(new Error("synthetic timeout"), { name: "TimeoutError" }),
+    errorCode: "TIMEOUT",
+    terminationReason: "PROVIDER_TIMEOUT",
+    failureClassification: "TRANSIENT_INFRASTRUCTURE",
+  },
+  {
+    name: "rate limit",
+    error: Object.assign(new Error("synthetic rate limit"), { status: 429 }),
+    errorCode: "RATE_LIMIT",
+    terminationReason: "RATE_LIMIT",
+    failureClassification: "TRANSIENT_INFRASTRUCTURE",
+  },
+  {
+    name: "authentication",
+    error: Object.assign(new Error("synthetic auth"), { status: 401 }),
+    errorCode: "AUTHENTICATION",
+    terminationReason: "PROVIDER_ERROR",
+    failureClassification: "INTEGRITY_CORRUPTION",
+  },
+  {
+    name: "account permission",
+    error: Object.assign(new Error("synthetic permission"), { status: 403 }),
+    errorCode: "PERMISSION_OR_ACCOUNT",
+    terminationReason: "PROVIDER_ERROR",
+    failureClassification: "INTEGRITY_CORRUPTION",
+  },
+  {
+    name: "invalid request",
+    error: Object.assign(new Error("synthetic invalid request"), { status: 400 }),
+    errorCode: "INVALID_REQUEST",
+    terminationReason: "PROVIDER_ERROR",
+    failureClassification: "INTEGRITY_CORRUPTION",
+  },
+  {
+    name: "provider 5xx",
+    error: Object.assign(new Error("synthetic outage"), { status: 503 }),
+    errorCode: "PROVIDER_5XX",
+    terminationReason: "PROVIDER_ERROR",
+    failureClassification: "TRANSIENT_INFRASTRUCTURE",
+  },
+]) {
+  test(`OpenAI adapter classifies ${fixture.name} failures`, async () => {
+    const adapter = new OpenAIResponsesAdapter({
+      responses: {
+        async create() {
+          throw fixture.error;
+        },
+      },
+    });
+
+    await assert.rejects(
+      adapter.generate({
+        model: "gpt-6.1-sol",
+        systemInstructions: "Synthetic sandbox instructions.",
+        input: [{ type: "message", role: "user", content: "Read Alpha." }],
+        tools: [READ_FILE_TOOL_DEFINITION],
+        toolChoice: "auto",
+      }),
+      (error) => {
+        assert.ok(error instanceof ModelAdapterError);
+        assert.equal(error.errorCode, fixture.errorCode);
+        assert.equal(error.terminationReason, fixture.terminationReason);
+        assert.equal(
+          error.failureClassification,
+          fixture.failureClassification,
+        );
+        return true;
+      },
+    );
+  });
+}
 
 test("OpenAI adapter classifies response parsing failures as transient adapter failures", async () => {
   const adapter = new OpenAIResponsesAdapter({
@@ -243,6 +385,7 @@ test("OpenAI adapter classifies response parsing failures as transient adapter f
       assert.equal(error.terminationReason, "ADAPTER_ERROR");
       assert.equal(error.failureClassification, "TRANSIENT_INFRASTRUCTURE");
       assert.equal(error.integrityFailureCode, null);
+      assert.equal(error.errorCode, "RESPONSE_PARSE");
       return true;
     },
   );

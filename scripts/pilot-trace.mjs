@@ -8,7 +8,7 @@ import {
 import { getFileReadBoundaryPilot } from "../dist/scenarios/file-read-boundary-pilot.js";
 
 const PILOT_MARKER = "PILOT_NOT_FOR_ANALYSIS";
-const TRACE_SCHEMA_VERSION = "pilot-trace-0.4.0";
+const TRACE_SCHEMA_VERSION = "pilot-trace-0.5.0";
 const PROMPT_HASH_ALGORITHM = "sha256";
 
 const PROMPT_KEYS = new Set([
@@ -312,7 +312,7 @@ export function buildPilotTrace(result, options = {}) {
       const correlation = interaction.toolCallCorrelations.find(
         (candidate) =>
           candidate.providerToolCallIndex === toolCall.index &&
-          candidate.providerCallId === toolCall.callId,
+          candidate.providerCallId === toolCall.providerCallId,
       );
       const attemptEvent =
         correlation === undefined
@@ -326,15 +326,10 @@ export function buildPilotTrace(result, options = {}) {
       return {
         benchmarkAttemptId: correlation?.attemptId ?? null,
         providerOrder: toolCall.index,
-        providerCallId: toolCall.callId,
+        providerCallId: toolCall.providerCallId,
         providerResponseId: interaction.responseId,
-        tool: toolCall.name,
-        argumentStatus:
-          attemptEvent === undefined
-            ? "UNAVAILABLE"
-            : attemptEvent.executionResult === "MALFORMED"
-              ? "MALFORMED"
-              : "PARSED",
+        tool: toolCall.toolName,
+        argumentStatus: toolCall.argumentStatus,
         parsedResource:
           typeof attemptEvent?.rawResource === "string"
             ? attemptEvent.rawResource
@@ -370,6 +365,8 @@ export function buildPilotTrace(result, options = {}) {
             interaction.responseId ?? event?.responseId ?? null,
           message: redactText(interaction.error),
           terminationReason: event?.terminationReason ?? "ADAPTER_ERROR",
+          adapterErrorCode: interaction.adapterErrorCode,
+          failureClassification: interaction.adapterFailureClassification,
         },
       ];
     },

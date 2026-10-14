@@ -1,5 +1,6 @@
 import { ModelAdapterError } from "../adapters/model-adapter.js";
 import type {
+  AdapterErrorCode,
   ModelAdapter,
   ModelAdapterRequest,
   ModelAdapterResult,
@@ -19,6 +20,7 @@ import type { BenchmarkEvent } from "../schemas/events.js";
 import { createPermission } from "../schemas/permission.js";
 import type { AuthorizationState, Permission } from "../schemas/permission.js";
 import type {
+  AdapterFailureClassification,
   AttemptDisposition,
   IntegrityFailureCode,
   IntegrityStatus,
@@ -83,6 +85,8 @@ export interface ModelInteractionRecord {
   readonly responseId: string | null;
   readonly toolCallCorrelations: readonly ModelToolCallCorrelation[];
   readonly error: string | null;
+  readonly adapterErrorCode: AdapterErrorCode | null;
+  readonly adapterFailureClassification: AdapterFailureClassification | null;
 }
 
 export interface ModelAssistantText {
@@ -108,7 +112,7 @@ export interface ModelSyntheticToolResult {
 
 export interface ModelTrialMetadata {
   readonly executionMode: "MODEL_PILOT";
-  readonly runnerVersion: "0.3.0";
+  readonly runnerVersion: "0.4.0";
   readonly pilotPromptVersion: typeof PILOT_PROMPT_VERSION;
   readonly model: string;
   readonly modelConfiguration: Readonly<Record<string, unknown>>;
@@ -305,6 +309,12 @@ export async function runModelTrial(
             responseId: null,
             toolCallCorrelations: Object.freeze([]),
             error: providerError,
+            adapterErrorCode:
+              error instanceof ModelAdapterError ? error.errorCode : null,
+            adapterFailureClassification:
+              error instanceof ModelAdapterError
+                ? error.failureClassification
+                : null,
           }),
         );
         eventLog.append({
@@ -316,14 +326,22 @@ export async function runModelTrial(
             error instanceof ModelAdapterError ? error.responseId : null,
           status: error instanceof ModelAdapterError ? error.status : null,
           message: providerError,
+          adapterErrorCode:
+            error instanceof ModelAdapterError ? error.errorCode : null,
+          failureClassification:
+            error instanceof ModelAdapterError
+              ? error.failureClassification
+              : null,
           terminationReason,
           authorizationStateReference,
         });
         break stepLoop;
       }
 
-      const providerReportedFailure =
-        result.status !== null && result.status !== "completed";
+      const providerReportedFailure = ![
+        "COMPLETED",
+        "REQUIRES_ACTION",
+      ].includes(result.responseStatus);
       const providerStatusError = providerReportedFailure
         ? `Model provider returned non-completed status: ${result.status}`
         : null;
@@ -352,19 +370,23 @@ export async function runModelTrial(
 
       const correlations: ModelToolCallCorrelation[] = [];
       for (const toolCall of result.toolCalls) {
+        const argumentsForExecution =
+          typeof toolCall.rawArguments === "string"
+            ? toolCall.rawArguments
+            : (toolCall.normalizedArguments ?? "");
         const execution = readFileTool.executeModelToolCall({
           principal: BENCHMARK_AGENT,
-          tool: toolCall.name,
-          rawArguments: toolCall.arguments,
+          tool: toolCall.toolName ?? "",
+          rawArguments: argumentsForExecution,
           step: presentation.step,
-          providerCallId: toolCall.callId,
+          providerCallId: toolCall.providerCallId,
           providerResponseId: result.responseId,
           providerToolCallIndex: toolCall.index,
         });
         correlations.push(
           Object.freeze({
             providerToolCallIndex: toolCall.index,
-            providerCallId: toolCall.callId,
+            providerCallId: toolCall.providerCallId,
             attemptId: execution.attemptId,
           }),
         );
@@ -372,16 +394,17 @@ export async function runModelTrial(
           Object.freeze({
             attemptId: execution.attemptId,
             step: presentation.step,
-            providerCallId: toolCall.callId,
-            tool: toolCall.name,
+            providerCallId: toolCall.providerCallId,
+            tool: toolCall.toolName ?? "",
             result: Object.freeze(execution.result),
           }),
         );
-        if (toolCall.callId !== null) {
+        if (toolCall.providerCallId !== null) {
           conversation.push(
             Object.freeze({
               type: "tool_result",
-              callId: toolCall.callId,
+              callId: toolCall.providerCallId,
+              toolName: toolCall.toolName,
               output: serializeToolResult(execution.result),
             }),
           );
@@ -399,6 +422,8 @@ export async function runModelTrial(
           responseId: result.responseId,
           toolCallCorrelations: Object.freeze(correlations),
           error: providerStatusError,
+          adapterErrorCode: null,
+          adapterFailureClassification: null,
         }),
       );
 
@@ -414,6 +439,8 @@ export async function runModelTrial(
           status: result.status,
           message:
             providerStatusError ?? "Model provider returned a failed status",
+          adapterErrorCode: null,
+          failureClassification: null,
           terminationReason,
           authorizationStateReference,
         });
@@ -528,7 +555,7 @@ export async function runModelTrial(
     initialPermissions,
     metadata: Object.freeze({
       executionMode: "MODEL_PILOT",
-      runnerVersion: "0.3.0",
+      runnerVersion: "0.4.0",
       pilotPromptVersion: pilot.version,
       model: options.model,
       modelConfiguration: Object.freeze({

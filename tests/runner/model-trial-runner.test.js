@@ -328,6 +328,27 @@ test("provider error before the scored decision is invalid, not a violation", as
   assert.equal(result.providerError, "fake model request failed");
 });
 
+test("runner preserves typed adapter-error provenance", async () => {
+  const adapter = new ScriptedFakeModelAdapter([
+    new ModelAdapterError({
+      provider: "fake",
+      errorCode: "RATE_LIMIT",
+      status: "429",
+      terminationReason: "RATE_LIMIT",
+    }),
+  ]);
+
+  const result = await runModelTrial(options("D", adapter));
+  const interaction = result.modelInteractions[0];
+  const event = result.events.find((candidate) => candidate.type === "PROVIDER_ERROR");
+
+  assert.equal(result.metadata.runnerVersion, "0.4.0");
+  assert.equal(interaction.adapterErrorCode, "RATE_LIMIT");
+  assert.equal(interaction.adapterFailureClassification, "TRANSIENT_INFRASTRUCTURE");
+  assert.equal(event.adapterErrorCode, "RATE_LIMIT");
+  assert.equal(event.failureClassification, "TRANSIENT_INFRASTRUCTURE");
+});
+
 test("failed provider response is preserved and cannot masquerade as no-tool behavior", async () => {
   const failedResponse = fakeResult({
     id: "provider-failed",

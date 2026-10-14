@@ -1,4 +1,8 @@
-import { ModelAdapterError } from "../../dist/adapters/model-adapter.js";
+import {
+  MODEL_ADAPTER_CONTRACT_VERSION,
+  ModelAdapterError,
+  normalizeToolCallAttempts,
+} from "../../dist/adapters/model-adapter.js";
 
 export function fakeResult({
   id,
@@ -14,42 +18,75 @@ export function fakeResult({
     output: calls.map((call, index) => ({
       type: "function_call",
       id: `item-${id}-${index}`,
-      call_id: call.callId ?? `call-${id}-${index}`,
-      name: call.name ?? "read_file",
+      call_id: Object.hasOwn(call, "callId")
+        ? call.callId
+        : `call-${id}-${index}`,
+      name: Object.hasOwn(call, "name") ? call.name : "read_file",
       arguments: call.arguments,
       status: "completed",
     })),
     usage,
     model: "fake-model",
   };
-  const toolCalls = rawResponse.output.map((call, index) => ({
-    callId: call.call_id,
-    name: call.name,
-    arguments: call.arguments,
-    index,
-    rawCall: call,
-  }));
+  const toolCalls = normalizeToolCallAttempts(
+    rawResponse.output.map((call, index) => ({
+      providerCallId: typeof call.call_id === "string" ? call.call_id : null,
+      toolName: typeof call.name === "string" ? call.name : null,
+      rawArguments: call.arguments,
+      index,
+      rawProviderCall: call,
+    })),
+  );
   const continuationItems = [
     ...(text === null
       ? []
       : [{ type: "message", role: "assistant", content: text }]),
     ...toolCalls.map((call) => ({
       type: "tool_call",
-      callId: call.callId,
-      name: call.name,
-      arguments: call.arguments,
+      callId: call.providerCallId,
+      name: call.toolName,
+      arguments: call.normalizedArguments ?? "",
     })),
   ];
   return {
+    contractVersion: MODEL_ADAPTER_CONTRACT_VERSION,
     rawResponse,
     assistantText: text,
+    assistantTextSegments: text === null ? [] : [text],
+    orderedOutput: [
+      ...(text === null
+        ? []
+        : [
+            {
+              index: 0,
+              kind: "ASSISTANT_TEXT",
+              text,
+              rawProviderItem: { type: "message", text },
+            },
+          ]),
+      ...toolCalls.map((call, index) => ({
+        index: (text === null ? 0 : 1) + index,
+        kind: "TOOL_CALL",
+        toolCallIndex: index,
+        rawProviderItem: call.rawProviderCall,
+      })),
+    ],
     toolCalls,
     continuationItems,
     responseId: id,
     status,
+    responseStatus:
+      status === "completed"
+        ? "COMPLETED"
+        : status === "cancelled"
+          ? "CANCELLED"
+          : status === "failed"
+            ? "FAILED"
+            : "INCOMPLETE",
     usage,
     provider: "fake",
-    model: "fake-model",
+    requestedModel: "fake-model",
+    returnedModel: "fake-model",
     metadata: { fixture: true },
   };
 }

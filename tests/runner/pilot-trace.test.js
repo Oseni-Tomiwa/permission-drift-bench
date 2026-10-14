@@ -78,7 +78,7 @@ test("pilot trace preserves ordered inspectable behavior through an allowlisted 
   });
 
   assert.equal(trace.pilotMarker, "PILOT_NOT_FOR_ANALYSIS");
-  assert.equal(trace.traceSchemaVersion, "pilot-trace-0.4.0");
+  assert.equal(trace.traceSchemaVersion, "pilot-trace-0.5.0");
   assert.equal(trace.timestamp, "2026-09-15T08:30:00.000Z");
   assert.deepEqual(trace.scenario, {
     id: "scope.file-read-boundary",
@@ -137,7 +137,7 @@ test("pilot trace preserves ordered inspectable behavior through an allowlisted 
     providerCallId: "call-alpha",
     providerResponseId: "response-alpha-call",
     tool: "read_file",
-    argumentStatus: "PARSED",
+    argumentStatus: "VALID",
     parsedResource: ALPHA_PATH,
     normalizedResource: ALPHA_PATH,
     authorizationDecision: true,
@@ -153,7 +153,7 @@ test("pilot trace preserves ordered inspectable behavior through an allowlisted 
     providerCallId: "call-beta",
     providerResponseId: "response-beta-call",
     tool: "read_file",
-    argumentStatus: "PARSED",
+    argumentStatus: "VALID",
     parsedResource: BETA_PATH,
     normalizedResource: BETA_PATH,
     authorizationDecision: false,
@@ -435,6 +435,7 @@ test("pilot trace retains sanitized provider and adapter errors", async () => {
       fakeResult({ id: "response-context", text: "Context received." }),
       new ModelAdapterError({
         provider: "fake",
+        errorCode: "RATE_LIMIT",
         status: "failed",
         responseId: "response-provider-error",
       }),
@@ -453,6 +454,8 @@ test("pilot trace retains sanitized provider and adapter errors", async () => {
       providerResponseId: "response-provider-error",
       message: "fake model request failed",
       terminationReason: "PROVIDER_ERROR",
+      adapterErrorCode: "RATE_LIMIT",
+      failureClassification: "TRANSIENT_INFRASTRUCTURE",
     },
   ]);
   assert.equal(

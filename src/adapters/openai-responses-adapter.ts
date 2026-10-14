@@ -1,15 +1,24 @@
-import OpenAI from "openai";
-
 import {
+  MODEL_ADAPTER_CONTRACT_VERSION,
   ModelAdapterError,
+  classifyProviderError,
+  normalizeToolCallAttempts,
 } from "./model-adapter.js";
 import type {
   ModelAdapter,
   ModelAdapterRequest,
   ModelAdapterResult,
   ModelInputItem,
+  ModelOrderedOutputItem,
+  ModelToolDefinition,
   ModelToolCallAttempt,
+  RawModelToolCallAttempt,
 } from "./model-adapter.js";
+
+export const OPENAI_RESPONSES_ADAPTER_VERSION =
+  "openai-responses-adapter-v0.2.0";
+export const OPENAI_RESPONSES_API_SURFACE = "responses-v1";
+export const OPENAI_SDK_VERSION = "7.15.0";
 
 interface OpenAIResponseOutputItem {
   readonly type: string;
@@ -29,6 +38,23 @@ interface OpenAIResponseLike {
   readonly parallel_tool_calls?: unknown;
   readonly incomplete_details?: unknown;
   readonly [key: string]: unknown;
+}
+
+function normalizedResponseStatus(status: string | null) {
+  switch (status) {
+    case "completed":
+      return "COMPLETED" as const;
+    case "incomplete":
+    case "in_progress":
+    case "queued":
+      return "INCOMPLETE" as const;
+    case "failed":
+      return "FAILED" as const;
+    case "cancelled":
+      return "CANCELLED" as const;
+    default:
+      return "UNKNOWN" as const;
+  }
 }
 
 export interface OpenAIResponsesClient {
@@ -73,6 +99,7 @@ function configurationFields(
     "topP",
     "maxOutputTokens",
     "reasoning",
+    "parallelToolCalls",
   ]);
   for (const key of Object.keys(configuration)) {
     if (!supportedKeys.has(key)) {
@@ -107,37 +134,122 @@ function configurationFields(
     }
     fields.reasoning = configuration.reasoning;
   }
+  if (configuration.parallelToolCalls !== undefined) {
+    if (typeof configuration.parallelToolCalls !== "boolean") {
+      throw new Error("OpenAI parallelToolCalls must be a boolean");
+    }
+    fields.parallel_tool_calls = configuration.parallelToolCalls;
+  }
   return fields;
+}
+
+function mapTool(tool: ModelToolDefinition): ModelToolDefinition {
+  if (tool.type !== "function" || tool.name !== "read_file") {
+    throw new Error("OpenAI exposes only read_file");
+  }
+  return tool;
 }
 
 function parseToolCalls(
   output: readonly OpenAIResponseOutputItem[],
 ): readonly ModelToolCallAttempt[] {
-  return Object.freeze(
+  const rawCalls: RawModelToolCallAttempt[] =
     output.flatMap((item, index) => {
       if (item.type !== "function_call") {
         return [];
       }
       return [
         Object.freeze({
-          callId: typeof item.call_id === "string" ? item.call_id : null,
-          name: typeof item.name === "string" ? item.name : "",
-          arguments:
-            typeof item.arguments === "string" ? item.arguments : "",
           index,
-          rawCall: item,
+          providerCallId:
+            typeof item.call_id === "string" ? item.call_id : null,
+          toolName: typeof item.name === "string" ? item.name : null,
+          ...(Object.hasOwn(item, "arguments")
+            ? { rawArguments: item.arguments }
+            : {}),
+          rawProviderCall: item,
         }),
       ];
+    });
+  return normalizeToolCallAttempts(rawCalls);
+}
+
+function textSegments(
+  output: readonly OpenAIResponseOutputItem[],
+): readonly string[] {
+  return Object.freeze(
+    output.flatMap((item) => {
+      if (item.type !== "message" || !Array.isArray(item.content)) {
+        return [];
+      }
+      return item.content.flatMap((content) =>
+        content !== null &&
+        typeof content === "object" &&
+        typeof (content as Record<string, unknown>).text === "string"
+          ? [(content as Record<string, unknown>).text as string]
+          : [],
+      );
+    }),
+  );
+}
+
+function orderedOutput(
+  output: readonly OpenAIResponseOutputItem[],
+  toolCalls: readonly ModelToolCallAttempt[],
+): readonly ModelOrderedOutputItem[] {
+  return Object.freeze(
+    output.map((item, index): ModelOrderedOutputItem => {
+      if (item.type === "function_call") {
+        const toolCallIndex = toolCalls.findIndex(
+          (candidate) => candidate.index === index,
+        );
+        return Object.freeze({
+          index,
+          kind: "TOOL_CALL" as const,
+          toolCallIndex,
+          rawProviderItem: item,
+        });
+      }
+      if (item.type === "message") {
+        const text = textSegments([item]).join("");
+        return Object.freeze({
+          index,
+          kind: "ASSISTANT_TEXT" as const,
+          text,
+          rawProviderItem: item,
+        });
+      }
+      if (item.type === "reasoning") {
+        return Object.freeze({
+          index,
+          kind: "PROVIDER_STATE" as const,
+          provider: "openai",
+          value: item,
+        });
+      }
+      return Object.freeze({
+        index,
+        kind: "UNKNOWN_PROVIDER_ITEM" as const,
+        provider: "openai",
+        rawProviderItem: item,
+      });
     }),
   );
 }
 
 export class OpenAIResponsesAdapter implements ModelAdapter {
-  readonly #client: OpenAIResponsesClient;
+  #client: OpenAIResponsesClient | undefined;
 
   constructor(client?: OpenAIResponsesClient) {
-    this.#client =
-      client ?? (new OpenAI() as unknown as OpenAIResponsesClient);
+    this.#client = client;
+  }
+
+  async #getClient(): Promise<OpenAIResponsesClient> {
+    if (this.#client === undefined) {
+      const { default: OpenAI } = await import("openai");
+      this.#client = new OpenAI() as unknown as OpenAIResponsesClient;
+    }
+    return this.#client;
   }
 
   async generate(request: ModelAdapterRequest): Promise<ModelAdapterResult> {
@@ -147,6 +259,7 @@ export class OpenAIResponsesAdapter implements ModelAdapter {
     } catch (error) {
       throw new ModelAdapterError({
         provider: "openai",
+        errorCode: "FOREIGN_CONTINUATION_STATE",
         terminationReason: "ADAPTER_ERROR",
         failureClassification: "INTEGRITY_CORRUPTION",
         integrityFailureCode: "ADAPTER_SEMANTIC_CORRUPTION",
@@ -155,11 +268,14 @@ export class OpenAIResponsesAdapter implements ModelAdapter {
     }
 
     let configuredFields: Readonly<Record<string, unknown>>;
+    let tools: readonly ModelToolDefinition[];
     try {
       configuredFields = configurationFields(request.configuration);
+      tools = Object.freeze(request.tools.map(mapTool));
     } catch (error) {
       throw new ModelAdapterError({
         provider: "openai",
+        errorCode: "UNSUPPORTED_CONFIGURATION",
         terminationReason: "ADAPTER_ERROR",
         failureClassification: "INTEGRITY_CORRUPTION",
         integrityFailureCode: "WRONG_MODEL_CONFIGURATION",
@@ -169,36 +285,44 @@ export class OpenAIResponsesAdapter implements ModelAdapter {
 
     let response: OpenAIResponseLike;
     try {
-      response = await this.#client.responses.create({
+      const client = await this.#getClient();
+      response = await client.responses.create({
         model: request.model,
         instructions: request.systemInstructions,
         input,
-        tools: [...request.tools],
+        tools: [...tools],
         tool_choice: request.toolChoice,
         store: false,
         include: ["reasoning.encrypted_content"],
         ...configuredFields,
       });
     } catch (error) {
-      throw new ModelAdapterError({ provider: "openai", cause: error });
+      throw classifyProviderError("openai", error);
     }
 
     try {
-      const output = response.output ?? [];
+      if (!Array.isArray(response.output)) {
+        throw new TypeError("OpenAI response output must be an array");
+      }
+      const output = response.output;
       const responseId = typeof response.id === "string" ? response.id : null;
       const status =
         typeof response.status === "string" ? response.status : null;
       const responseModel =
-        typeof response.model === "string" ? response.model : request.model;
+        typeof response.model === "string" ? response.model : null;
+      const toolCalls = parseToolCalls(output);
+      const assistantTextSegments = textSegments(output);
 
       return Object.freeze({
+        contractVersion: MODEL_ADAPTER_CONTRACT_VERSION,
         rawResponse: response,
         assistantText:
-          typeof response.output_text === "string" &&
-          response.output_text.length > 0
-            ? response.output_text
+          assistantTextSegments.length > 0
+            ? assistantTextSegments.join("")
             : null,
-        toolCalls: parseToolCalls(output),
+        assistantTextSegments,
+        orderedOutput: orderedOutput(output, toolCalls),
+        toolCalls,
         continuationItems: Object.freeze(
           output.map((item) =>
             Object.freeze({
@@ -210,10 +334,20 @@ export class OpenAIResponsesAdapter implements ModelAdapter {
         ),
         responseId,
         status,
+        responseStatus: normalizedResponseStatus(status),
         usage: response.usage ?? null,
         provider: "openai",
-        model: responseModel,
+        requestedModel: request.model,
+        returnedModel: responseModel,
         metadata: Object.freeze({
+          adapterVersion: OPENAI_RESPONSES_ADAPTER_VERSION,
+          apiSurface: OPENAI_RESPONSES_API_SURFACE,
+          sdkPackage: "openai",
+          sdkVersion: OPENAI_SDK_VERSION,
+          store: false,
+          previousResponseId: "OMITTED",
+          seed: "OMITTED",
+          builtInTools: false,
           parallelToolCalls: response.parallel_tool_calls ?? null,
           incompleteDetails: response.incomplete_details ?? null,
         }),
@@ -221,6 +355,7 @@ export class OpenAIResponsesAdapter implements ModelAdapter {
     } catch (error) {
       throw new ModelAdapterError({
         provider: "openai",
+        errorCode: "RESPONSE_PARSE",
         terminationReason: "ADAPTER_ERROR",
         failureClassification: "TRANSIENT_INFRASTRUCTURE",
         cause: error,

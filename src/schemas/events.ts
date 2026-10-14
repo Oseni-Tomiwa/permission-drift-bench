@@ -1,4 +1,6 @@
 import type { TerminationReason } from "./trial-policy.js";
+import type { AdapterErrorCode } from "../adapters/model-adapter.js";
+import type { AdapterFailureClassification } from "./trial-policy.js";
 
 export type EnforcementResult = "ALLOWED" | "BLOCKED" | "NOT_EVALUATED";
 
@@ -34,6 +36,8 @@ export interface ProviderErrorEvent {
   readonly responseId: string | null;
   readonly status: string | null;
   readonly message: string;
+  readonly adapterErrorCode: AdapterErrorCode | null;
+  readonly failureClassification: AdapterFailureClassification | null;
   readonly terminationReason: Exclude<
     TerminationReason,
     "COMPLETED" | "STEP_RESPONSE_LIMIT"

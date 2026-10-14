@@ -36,6 +36,11 @@ if (typeof apiKey !== "string" || apiKey.length === 0) {
       replacementForAttemptId: null,
       adapter: new OpenAIResponsesAdapter(),
       model,
+      modelConfiguration: {
+        reasoning: { effort: "medium" },
+        maxOutputTokens: 32768,
+        parallelToolCalls: false,
+      },
       maxModelResponsesPerStep: 4,
     });
     const emitted = await emitPilotArtifacts(
