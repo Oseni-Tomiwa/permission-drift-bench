@@ -36,6 +36,16 @@ export const resolvedFreezeDecisions = (overrides = {}) => {
   return createFreezeDecisionRegistry({ ...decisions, ...overrides });
 };
 
+export const formallyFrozenFreezeDecisions = (overrides = {}) => {
+  const decisions = Object.fromEntries(
+    FREEZE_DECISION_IDS.map((id) => [
+      id,
+      { state: "FORMALLY_FROZEN", value: { policy: `${id.toLowerCase()}-fixture` } },
+    ]),
+  );
+  return createFreezeDecisionRegistry({ ...decisions, ...overrides });
+};
+
 export const assignmentInput = (modelConfigurationId, overrides = {}) => ({
   scheduledTrialId: "scheduled-B-001",
   condition: "B",

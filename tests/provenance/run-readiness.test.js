@@ -12,10 +12,50 @@ import {
   validateMainCollectionReadiness,
 } from "../../dist/provenance/run-specification.js";
 import {
+  formallyFrozenFreezeDecisions,
   resolvedFreezeDecisions,
   runSpecificationInput,
   verifiedRun,
 } from "../helpers/provenance-fixtures.js";
+
+test("conceptual decisions block assignment readiness", () => {
+  const run = verifiedRun({
+    freezeDecisions: formallyFrozenFreezeDecisions({
+      REPETITION_COUNT_SAMPLE_SIZE: {
+        state: "CONCEPTUALLY_RESOLVED",
+        value: { repetitionsPerCell: 100 },
+      },
+    }),
+  });
+
+  const result = validateAssignmentReadiness(run);
+
+  assert.equal(result.ready, false);
+  assert.ok(result.reasonCodes.includes(
+    "CONCEPTUALLY_RESOLVED_FREEZE_DECISION:REPETITION_COUNT_SAMPLE_SIZE",
+  ));
+});
+
+test("resolved candidates permit assignment but not collection", () => {
+  const run = verifiedRun({ freezeDecisions: resolvedFreezeDecisions() });
+
+  assert.equal(validateAssignmentReadiness(run).ready, true);
+  const collection = validateMainCollectionReadiness(run);
+  assert.equal(collection.ready, false);
+  assert.ok(collection.reasonCodes.includes(
+    "NOT_FORMALLY_FROZEN_FREEZE_DECISION:RETRY_POLICY",
+  ));
+});
+
+test("formally frozen decisions satisfy decision-state readiness gates", () => {
+  const run = verifiedRun({
+    freezeDecisions: formallyFrozenFreezeDecisions(),
+  });
+
+  assert.equal(validateAssignmentReadiness(run).ready, true);
+  assert.equal(validateMainCollectionReadiness(run).ready, true);
+  assert.equal(validateAnalysisReadiness(run).ready, true);
+});
 
 const validatorForGate = (gate) => {
   if (gate === "ASSIGNMENT") return validateAssignmentReadiness;
@@ -26,7 +66,7 @@ const validatorForGate = (gate) => {
 test("every freeze decision independently blocks its applicable readiness gate", () => {
   for (const id of FREEZE_DECISION_IDS) {
     const run = verifiedRun({
-      freezeDecisions: resolvedFreezeDecisions({ [id]: { state: "UNRESOLVED" } }),
+      freezeDecisions: formallyFrozenFreezeDecisions({ [id]: { state: "UNRESOLVED" } }),
     });
     const result = validatorForGate(FREEZE_DECISION_CATALOG[id].gate)(run);
 
@@ -40,7 +80,7 @@ test("every freeze decision independently blocks its applicable readiness gate",
 
 test("analysis-only annotation does not block collection but blocks analysis", () => {
   const run = verifiedRun({
-    freezeDecisions: resolvedFreezeDecisions({
+    freezeDecisions: formallyFrozenFreezeDecisions({
       ANNOTATION_PROTOCOL: { state: "UNRESOLVED" },
     }),
   });
@@ -87,7 +127,7 @@ test("extra decisions and invalid NOT_APPLICABLE states fail readiness", () => {
 });
 
 test("fully resolved content is ready only while nested records verify", () => {
-  const run = verifiedRun();
+  const run = verifiedRun({ freezeDecisions: formallyFrozenFreezeDecisions() });
   assert.equal(validateAssignmentReadiness(run).ready, true);
   assert.equal(validateMainCollectionReadiness(run).ready, true);
   assert.equal(validateAnalysisReadiness(run).ready, true);
@@ -114,12 +154,13 @@ test("unresolved model and assignment details block assignment readiness", () =>
     },
   };
   const modelResult = validateAssignmentReadiness({
-    ...verifiedRun(),
+    ...verifiedRun({ freezeDecisions: formallyFrozenFreezeDecisions() }),
     modelConfigurations: [model],
   });
   assert.equal(modelResult.ready, false);
 
   const run = verifiedRun({
+    freezeDecisions: formallyFrozenFreezeDecisions(),
     assignmentDefinitions: [
       createAssignmentDefinition({
         scheduledTrialId: input.assignmentDefinitions[0].scheduledTrialId,

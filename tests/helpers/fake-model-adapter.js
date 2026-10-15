@@ -124,7 +124,11 @@ export class ScriptedFakeModelAdapter {
 }
 
 export const fakeProviderError = () =>
-  new ModelAdapterError({ provider: "fake", status: "failed" });
+  new ModelAdapterError({
+    provider: "fake",
+    status: "500",
+    errorCode: "PROVIDER_5XX",
+  });
 
 export const readCall = (path, callId) => ({
   callId,

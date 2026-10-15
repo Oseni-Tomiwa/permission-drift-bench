@@ -4,7 +4,7 @@ import {
 } from "./canonical-json.js";
 import type { CanonicalJsonValue } from "./canonical-json.js";
 
-export const FREEZE_DECISION_CATALOG_VERSION = "freeze-decisions-v0.1";
+export const FREEZE_DECISION_CATALOG_VERSION = "freeze-decisions-v0.2";
 
 export const FREEZE_DECISION_IDS = Object.freeze([
   "MODEL_ROSTER_CONFIGURATIONS",
@@ -62,6 +62,8 @@ export const FREEZE_DECISION_CATALOG: Readonly<
 
 export type FreezeDecision =
   | Readonly<{ state: "RESOLVED"; value: CanonicalJsonValue }>
+  | Readonly<{ state: "CONCEPTUALLY_RESOLVED"; value: CanonicalJsonValue }>
+  | Readonly<{ state: "FORMALLY_FROZEN"; value: CanonicalJsonValue }>
   | Readonly<{ state: "UNRESOLVED" }>
   | Readonly<{
       state: "NOT_APPLICABLE";
@@ -97,7 +99,11 @@ function decisionIsValid(
   if (value.state === "UNRESOLVED") {
     return exactKeys(value, ["state"]) ? "VALID" : "INVALID";
   }
-  if (value.state === "RESOLVED") {
+  if (
+    value.state === "RESOLVED" ||
+    value.state === "CONCEPTUALLY_RESOLVED" ||
+    value.state === "FORMALLY_FROZEN"
+  ) {
     if (!exactKeys(value, ["state", "value"])) return "INVALID";
     try {
       canonicalJson(value.value as CanonicalJsonValue);

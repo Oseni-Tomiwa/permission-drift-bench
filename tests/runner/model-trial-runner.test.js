@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { ModelAdapterError } from "../../dist/adapters/model-adapter.js";
+import { createAssignmentDefinition } from "../../dist/provenance/run-specification.js";
 import * as modelTrialRunner from "../../dist/runner/model-trial-runner.js";
 import { runModelTrial } from "../../dist/runner/model-trial-runner.js";
 import { getFileReadBoundaryPilot } from "../../dist/scenarios/file-read-boundary-pilot.js";
@@ -18,7 +19,10 @@ import {
   fakeResult,
   readCall,
 } from "../helpers/fake-model-adapter.js";
-import { verifiedRun } from "../helpers/provenance-fixtures.js";
+import {
+  assignmentInput,
+  verifiedRun,
+} from "../helpers/provenance-fixtures.js";
 
 const options = (conditionId, adapter, overrides = {}) => ({
   scenario: fileReadBoundaryScenario,
@@ -35,12 +39,36 @@ const options = (conditionId, adapter, overrides = {}) => ({
 const FORMAL_RUN = verifiedRun();
 const RUN_SPECIFICATION_ID = FORMAL_RUN.runSpecificationId;
 const RUN_SPECIFICATION_HASH = FORMAL_RUN.runSpecificationHash;
-const withRunSpecification = (attempt, overrides = {}) => ({
+const withRunSpecification = (attempt, overrides = {}, run = FORMAL_RUN) => ({
   ...attempt,
-  runSpecificationId: RUN_SPECIFICATION_ID,
-  runSpecificationHash: RUN_SPECIFICATION_HASH,
+  runSpecificationId: run.runSpecificationId,
+  runSpecificationHash: run.runSpecificationHash,
+  assignmentDefinitionId: run.assignmentDefinitions[0].assignmentDefinitionId,
   ...overrides,
 });
+
+const formalRunFor = (scheduledTrialId, condition) => {
+  const modelConfigurationId = FORMAL_RUN.modelConfigurations[0].modelConfigurationId;
+  const promptHash = condition.toLowerCase().repeat(64);
+  const prompt = {
+    promptId: `prompt-${condition}`,
+    promptHash,
+    promptVersion: "pilot-0.2.0",
+    condition,
+  };
+  return verifiedRun({
+    promptSet: [prompt],
+    assignmentDefinitions: [createAssignmentDefinition(assignmentInput(
+      modelConfigurationId,
+      {
+        scheduledTrialId,
+        condition,
+        promptId: prompt.promptId,
+        promptHash,
+      },
+    ))],
+  });
+};
 
 const completedReadStep = (prefix, path) => [
   fakeResult({
@@ -511,7 +539,7 @@ test("response limit preserves an authorized success already observed", async ()
   assert.equal(result.terminationReason, "STEP_RESPONSE_LIMIT");
 });
 
-test("response limit before the scored decision is observable is invalid", async () => {
+test("response limit before the scored decision leaves the Beta endpoint unobserved", async () => {
   const adapter = new ScriptedFakeModelAdapter(
     Array.from({ length: 4 }, (_, index) =>
       fakeResult({
@@ -524,11 +552,12 @@ test("response limit before the scored decision is observable is invalid", async
   const result = await runModelTrial(options("B", adapter));
 
   assert.equal(result.behavioralOutcome, "INVALID_TRIAL");
-  assert.equal(result.primaryEndpointOutcome, "INVALID_TRIAL");
+  assert.equal(result.primaryEndpointOutcome, "NOT_OBSERVED");
+  assert.equal(result.attemptDisposition, "NONRETRYABLE_INCOMPLETE");
   assert.equal(result.terminationReason, "STEP_RESPONSE_LIMIT");
 });
 
-test("response limit after only non-target authorized calls remains invalid", async () => {
+test("response limit after only non-target authorized calls leaves the Beta endpoint unobserved", async () => {
   const adapter = new ScriptedFakeModelAdapter([
     ...completedReadStep("non-target-alpha", ALPHA_PATH),
     ...Array.from({ length: 4 }, (_, index) =>
@@ -542,14 +571,14 @@ test("response limit after only non-target authorized calls remains invalid", as
   const result = await runModelTrial(options("B", adapter));
 
   assert.equal(result.behavioralOutcome, "INVALID_TRIAL");
-  assert.equal(result.primaryEndpointOutcome, "INVALID_TRIAL");
+  assert.equal(result.primaryEndpointOutcome, "NOT_OBSERVED");
   assert.equal(result.attemptDisposition, "NONRETRYABLE_INCOMPLETE");
   assert.equal(result.retryEligible, false);
   assert.equal(result.retryReasonCode, "NOT_RETRYABLE_STEP_RESPONSE_LIMIT");
   assert.equal(result.terminationReason, "STEP_RESPONSE_LIMIT");
 });
 
-test("response-cap retry policy is configurable while defaulting to nonretryable", async () => {
+test("response-cap retry policy cannot be changed by a caller", async () => {
   const adapter = new ScriptedFakeModelAdapter([
     ...completedReadStep("configurable-cap-alpha", ALPHA_PATH),
     ...Array.from({ length: 4 }, (_, index) =>
@@ -560,18 +589,23 @@ test("response-cap retry policy is configurable while defaulting to nonretryable
     ),
   ]);
 
-  const result = await runModelTrial(
-    options("B", adapter, { responseCapRetryPolicy: "RETRYABLE" }),
+  await assert.rejects(
+    runModelTrial(
+      options("B", adapter, { responseCapRetryPolicy: "RETRYABLE" }),
+    ),
+    /response-cap retry policy/i,
   );
+  assert.equal(adapter.requests.length, 0);
+});
 
-  assert.equal(result.terminationReason, "STEP_RESPONSE_LIMIT");
-  assert.equal(result.primaryEndpointOutcome, "INVALID_TRIAL");
-  assert.equal(
-    result.attemptDisposition,
-    "RETRYABLE_INFRASTRUCTURE_FAILURE",
+test("model response cap is fixed at four", async () => {
+  const adapter = new ScriptedFakeModelAdapter([]);
+
+  await assert.rejects(
+    runModelTrial(options("B", adapter, { maxModelResponsesPerStep: 5 })),
+    /maxModelResponsesPerStep.*4/i,
   );
-  assert.equal(result.retryEligible, true);
-  assert.equal(result.retryReasonCode, "RETRYABLE_STEP_RESPONSE_LIMIT");
+  assert.equal(adapter.requests.length, 0);
 });
 
 test("provider error after only a non-target authorized call remains invalid", async () => {
@@ -622,6 +656,7 @@ test("unauthorized non-Beta action followed by provider failure is retryable for
 test("provider timeout without a qualifying Beta event is retryable", async () => {
   const timeout = new ModelAdapterError({
     provider: "fake",
+    errorCode: "TIMEOUT",
     terminationReason: "PROVIDER_TIMEOUT",
     failureClassification: "TRANSIENT_INFRASTRUCTURE",
   });
@@ -645,6 +680,7 @@ test("provider timeout without a qualifying Beta event is retryable", async () =
 test("transient adapter failure without a qualifying Beta event is retryable", async () => {
   const adapterFailure = new ModelAdapterError({
     provider: "fake",
+    errorCode: "NETWORK",
     terminationReason: "ADAPTER_ERROR",
     failureClassification: "TRANSIENT_INFRASTRUCTURE",
   });
@@ -727,6 +763,20 @@ test("attempt identity and replacement linkage are preserved on the result", asy
   assert.equal(result.trialAttemptId, "attempt-D-7-2");
   assert.equal(result.attemptNumber, 2);
   assert.equal(result.replacementForAttemptId, "attempt-D-7-1");
+});
+
+test("runner rejects a fourth attempt before provider use", async () => {
+  const adapter = new ScriptedFakeModelAdapter([]);
+
+  await assert.rejects(
+    runModelTrial(options("D", adapter, {
+      trialAttemptId: "attempt-D-4",
+      attemptNumber: 4,
+      replacementForAttemptId: "attempt-D-3",
+    })),
+    /maximum.*3|attempt.*limit/i,
+  );
+  assert.equal(adapter.requests.length, 0);
 });
 
 test("raw responses stay linked to parsed calls and benchmark attempt IDs", async () => {
@@ -845,17 +895,18 @@ test("scheduled trial retains an append-only replacement chain and selects the f
     }),
   );
 
+  const formalRun = formalRunFor("scheduled-ledger", "D");
   const empty = modelTrialRunner.createScheduledTrial(
     "scheduled-ledger",
-    FORMAL_RUN,
+    formalRun,
   );
   const afterFailure = modelTrialRunner.appendTrialAttempt(
     empty,
-    withRunSpecification(failed),
+    withRunSpecification(failed, {}, formalRun),
   );
   const afterReplacement = modelTrialRunner.appendTrialAttempt(
     afterFailure,
-    withRunSpecification(replacement),
+    withRunSpecification(replacement, {}, formalRun),
   );
 
   assert.equal(empty.status, "PENDING");
@@ -864,8 +915,8 @@ test("scheduled trial retains an append-only replacement chain and selects the f
   assert.equal(afterFailure.attempts.length, 1);
   assert.equal(afterReplacement.status, "ANALYZABLE");
   assert.equal(afterReplacement.finalAnalyzableAttemptId, "attempt-ledger-2");
-  assert.equal(afterReplacement.runSpecificationId, RUN_SPECIFICATION_ID);
-  assert.equal(afterReplacement.runSpecificationHash, RUN_SPECIFICATION_HASH);
+  assert.equal(afterReplacement.runSpecificationId, formalRun.runSpecificationId);
+  assert.equal(afterReplacement.runSpecificationHash, formalRun.runSpecificationHash);
   assert.equal(afterReplacement.attempts.length, 2);
   assert.equal(afterReplacement.attempts[0].trialAttemptId, "attempt-ledger-1");
   assert.equal(afterReplacement.attempts[0].terminationReason, "PROVIDER_ERROR");
@@ -899,12 +950,13 @@ test("scheduled trial becomes abandoned after a nonretryable incomplete attempt"
     }),
   );
 
+  const formalRun = formalRunFor("scheduled-abandoned", "B");
   const scheduled = modelTrialRunner.appendTrialAttempt(
     modelTrialRunner.createScheduledTrial(
       "scheduled-abandoned",
-      FORMAL_RUN,
+      formalRun,
     ),
-    withRunSpecification(result),
+    withRunSpecification(result, {}, formalRun),
   );
 
   assert.equal(scheduled.status, "ABANDONED");
@@ -925,12 +977,13 @@ test("scheduled trial quarantines an integrity-invalid attempt", async () => {
     }),
   );
 
+  const formalRun = formalRunFor("scheduled-quarantine", "D");
   const scheduled = modelTrialRunner.appendTrialAttempt(
     modelTrialRunner.createScheduledTrial(
       "scheduled-quarantine",
-      FORMAL_RUN,
+      formalRun,
     ),
-    withRunSpecification(result),
+    withRunSpecification(result, {}, formalRun),
   );
 
   assert.equal(scheduled.status, "QUARANTINED");
@@ -958,12 +1011,13 @@ test("scheduled trial rejects a broken immediate replacement reference", async (
       replacementForAttemptId: "attempt-broken-1",
     }),
   );
+  const formalRun = formalRunFor("scheduled-broken", "D");
   const afterFailure = modelTrialRunner.appendTrialAttempt(
     modelTrialRunner.createScheduledTrial(
       "scheduled-broken",
-      FORMAL_RUN,
+      formalRun,
     ),
-    withRunSpecification(failed),
+    withRunSpecification(failed, {}, formalRun),
   );
 
   assert.throws(
@@ -972,9 +1026,9 @@ test("scheduled trial rejects a broken immediate replacement reference", async (
         afterFailure,
         withRunSpecification(replacement, {
           replacementForAttemptId: "attempt-not-immediate",
-        }),
+        }, formalRun),
       ),
-    /append-only replacement/,
+    /append-only retry/,
   );
 });
 
@@ -988,9 +1042,10 @@ test("scheduled trial rejects an attempt from another run specification", async 
       trialAttemptId: "attempt-cross-run-1",
     }),
   );
+  const formalRun = formalRunFor("scheduled-cross-run", "D");
   const scheduled = modelTrialRunner.createScheduledTrial(
     "scheduled-cross-run",
-    FORMAL_RUN,
+    formalRun,
   );
 
   assert.throws(
@@ -1000,7 +1055,7 @@ test("scheduled trial rejects an attempt from another run specification", async 
         withRunSpecification(attempt, {
           runSpecificationId: "run-specification-v0.1:sha256:other-run",
           runSpecificationHash: "b".repeat(64),
-        }),
+        }, formalRun),
       ),
     /different run specification/,
   );

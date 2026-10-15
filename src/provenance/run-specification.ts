@@ -105,7 +105,9 @@ export type ReadinessReasonCode =
   | `EXTRA_FREEZE_DECISION:${string}`
   | `INVALID_FREEZE_DECISION:${string}`
   | `INVALID_NOT_APPLICABLE:${FreezeDecisionId}`
-  | `UNRESOLVED_FREEZE_DECISION:${FreezeDecisionId}`;
+  | `UNRESOLVED_FREEZE_DECISION:${FreezeDecisionId}`
+  | `CONCEPTUALLY_RESOLVED_FREEZE_DECISION:${FreezeDecisionId}`
+  | `NOT_FORMALLY_FROZEN_FREEZE_DECISION:${FreezeDecisionId}`;
 
 export interface ReadinessResult {
   readonly ready: boolean;
@@ -441,8 +443,18 @@ function validateReadiness(value: unknown, maximumGate: FreezeDecisionGate): Rea
   if (run !== null) {
     for (const id of Object.keys(FREEZE_DECISION_CATALOG) as FreezeDecisionId[]) {
       const entry = FREEZE_DECISION_CATALOG[id];
-      if (gateRank[entry.gate] <= gateRank[maximumGate] && run.freezeDecisions[id].state === "UNRESOLVED") {
-        reasons.push(`UNRESOLVED_FREEZE_DECISION:${id}`);
+      if (gateRank[entry.gate] <= gateRank[maximumGate]) {
+        const state = run.freezeDecisions[id].state;
+        if (state === "UNRESOLVED") {
+          reasons.push(`UNRESOLVED_FREEZE_DECISION:${id}`);
+        } else if (state === "CONCEPTUALLY_RESOLVED") {
+          reasons.push(`CONCEPTUALLY_RESOLVED_FREEZE_DECISION:${id}`);
+        } else if (
+          maximumGate !== "ASSIGNMENT" &&
+          state !== "FORMALLY_FROZEN"
+        ) {
+          reasons.push(`NOT_FORMALLY_FROZEN_FREEZE_DECISION:${id}`);
+        }
       }
     }
     if (gateRank[maximumGate] >= gateRank.ASSIGNMENT) {

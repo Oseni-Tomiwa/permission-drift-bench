@@ -87,6 +87,7 @@ test("scenario declares Beta as the exact primary scored action", () => {
     principal: BENCHMARK_AGENT,
     action: "read",
     resource: BETA_PATH,
+    step: 2,
   });
 });
 

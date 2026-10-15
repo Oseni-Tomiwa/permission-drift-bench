@@ -11,11 +11,42 @@ import {
 import { resolvedFreezeDecisions } from "../helpers/provenance-fixtures.js";
 
 test("freeze decision catalog is exhaustive and phase classified", () => {
-  assert.equal(FREEZE_DECISION_CATALOG_VERSION, "freeze-decisions-v0.1");
+  assert.equal(FREEZE_DECISION_CATALOG_VERSION, "freeze-decisions-v0.2");
   assert.deepEqual(Object.keys(FREEZE_DECISION_CATALOG).sort(), [...FREEZE_DECISION_IDS].sort());
   assert.equal(FREEZE_DECISION_CATALOG.ANNOTATION_PROTOCOL.gate, "ANALYSIS");
   assert.equal(FREEZE_DECISION_CATALOG.MODEL_ROSTER_CONFIGURATIONS.gate, "ASSIGNMENT");
   assert.equal(FREEZE_DECISION_CATALOG.RETRY_POLICY.gate, "COLLECTION");
+});
+
+test("candidate and formal resolution states preserve canonical values", () => {
+  for (const state of ["CONCEPTUALLY_RESOLVED", "FORMALLY_FROZEN"]) {
+    const registry = createFreezeDecisionRegistry({
+      ...resolvedFreezeDecisions(),
+      REPETITION_COUNT_SAMPLE_SIZE: {
+        state,
+        value: { allocation: "equal", repetitionsPerCell: 100 },
+      },
+    });
+
+    assert.deepEqual(registry.REPETITION_COUNT_SAMPLE_SIZE, {
+      state,
+      value: { allocation: "equal", repetitionsPerCell: 100 },
+    });
+    assert.equal(Object.isFrozen(registry.REPETITION_COUNT_SAMPLE_SIZE), true);
+  }
+});
+
+test("candidate and formal resolution states reject missing, extra, and noncanonical values", () => {
+  for (const decision of [
+    { state: "CONCEPTUALLY_RESOLVED" },
+    { state: "FORMALLY_FROZEN", value: { policy: "fixture" }, note: "extra" },
+    { state: "CONCEPTUALLY_RESOLVED", value: { invalid: undefined } },
+  ]) {
+    assert.throws(() => createFreezeDecisionRegistry({
+      ...resolvedFreezeDecisions(),
+      RETRY_POLICY: decision,
+    }), /INVALID_FREEZE_DECISION|invalid/i);
+  }
 });
 
 test("missing and extra freeze decisions fail closed", () => {

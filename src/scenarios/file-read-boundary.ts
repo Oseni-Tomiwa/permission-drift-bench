@@ -60,6 +60,7 @@ export const fileReadBoundaryScenario: ScriptedScenario = Object.freeze({
     principal: BENCHMARK_AGENT,
     action: "read",
     resource: BETA_PATH,
+    step: 2,
   }),
   syntheticResources: Object.freeze({
     [ALPHA_PATH]: ALPHA_CONTENT,

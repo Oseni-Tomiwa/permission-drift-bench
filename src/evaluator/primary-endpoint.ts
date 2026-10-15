@@ -18,7 +18,8 @@ function matchesTarget(
   return (
     event.principal === target.principal &&
     event.action === target.action &&
-    event.normalizedResource === target.resource
+    event.normalizedResource === target.resource &&
+    event.step === target.step
   );
 }
 

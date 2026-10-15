@@ -29,6 +29,11 @@ import type {
   ResponseCapRetryPolicy,
   TerminationReason,
 } from "../schemas/trial-policy.js";
+import {
+  MAX_ATTEMPTS_PER_SCHEDULED_TRIAL,
+  MAX_MODEL_RESPONSES_PER_STEP,
+  RESPONSE_CAP_RETRY_POLICY,
+} from "../schemas/trial-policy.js";
 import type {
   ConditionRole,
   ScenarioCondition,
@@ -47,10 +52,11 @@ import type { ReadFileResult } from "../tools/read-file.js";
 
 export {
   appendTrialAttempt,
+  createReplacementScheduledTrial,
   createScheduledTrial,
 } from "./scheduled-trial.js";
 
-export const DEFAULT_MAX_MODEL_RESPONSES_PER_STEP = 4;
+export const DEFAULT_MAX_MODEL_RESPONSES_PER_STEP = MAX_MODEL_RESPONSES_PER_STEP;
 
 export type ModelTrialTerminationReason = TerminationReason;
 
@@ -150,6 +156,18 @@ export interface ModelTrialResult {
   readonly metadata: ModelTrialMetadata;
 }
 
+function validateAttemptNumber(attemptNumber: number): void {
+  if (
+    !Number.isInteger(attemptNumber) ||
+    attemptNumber < 1 ||
+    attemptNumber > MAX_ATTEMPTS_PER_SCHEDULED_TRIAL
+  ) {
+    throw new TypeError(
+      `Attempt number must be an integer from 1 through ${MAX_ATTEMPTS_PER_SCHEDULED_TRIAL}; maximum attempt limit is ${MAX_ATTEMPTS_PER_SCHEDULED_TRIAL}`,
+    );
+  }
+}
+
 function findCondition(
   scenario: ScriptedScenario,
   conditionId: string,
@@ -196,28 +214,30 @@ export async function runModelTrial(
       "Model pilot runner supports only the canonical scope.file-read-boundary@0.1.0 scenario",
     );
   }
+  validateAttemptNumber(options.attemptNumber);
   if (
     options.scheduledTrialId.length === 0 ||
     options.trialAttemptId.length === 0 ||
-    !Number.isInteger(options.attemptNumber) ||
-    options.attemptNumber < 1 ||
     (options.attemptNumber === 1 && options.replacementForAttemptId !== null) ||
     (options.attemptNumber > 1 && options.replacementForAttemptId === null)
   ) {
     throw new Error("Invalid trial-attempt identity or replacement linkage");
   }
 
-  const maxModelResponsesPerStep =
-    options.maxModelResponsesPerStep ??
-    DEFAULT_MAX_MODEL_RESPONSES_PER_STEP;
-  const responseCapRetryPolicy =
-    options.responseCapRetryPolicy ?? "NONRETRYABLE";
   if (
-    !Number.isInteger(maxModelResponsesPerStep) ||
-    maxModelResponsesPerStep < 1
+    options.maxModelResponsesPerStep !== undefined &&
+    options.maxModelResponsesPerStep !== MAX_MODEL_RESPONSES_PER_STEP
   ) {
-    throw new Error("maxModelResponsesPerStep must be a positive integer");
+    throw new Error("maxModelResponsesPerStep is frozen at 4");
   }
+  if (
+    options.responseCapRetryPolicy !== undefined &&
+    options.responseCapRetryPolicy !== RESPONSE_CAP_RETRY_POLICY
+  ) {
+    throw new Error("Response-cap retry policy is frozen as NONRETRYABLE");
+  }
+  const maxModelResponsesPerStep = MAX_MODEL_RESPONSES_PER_STEP;
+  const responseCapRetryPolicy = RESPONSE_CAP_RETRY_POLICY;
 
   const condition = findCondition(options.scenario, options.conditionId);
   const pilot = getFileReadBoundaryPilot(condition.id);
@@ -247,6 +267,7 @@ export async function runModelTrial(
   const syntheticToolResults: ModelSyntheticToolResult[] = [];
   let terminationReason: ModelTrialTerminationReason = "COMPLETED";
   let providerError: string | null = null;
+  let terminalAdapterErrorCode: AdapterErrorCode | null = null;
   let integrityStatus = options.integrityStatus ?? "INTEGRITY_VALID";
   let integrityFailureCode = options.integrityFailureCode ?? null;
 
@@ -289,6 +310,8 @@ export async function runModelTrial(
         result = await options.adapter.generate(request);
       } catch (error) {
         providerError = safeAdapterError(error);
+        terminalAdapterErrorCode =
+          error instanceof ModelAdapterError ? error.errorCode : null;
         terminationReason =
           error instanceof ModelAdapterError
             ? error.terminationReason
@@ -498,6 +521,7 @@ export async function runModelTrial(
     terminationReason !== "COMPLETED" && !hasDecisiveScoredEvent;
   const primaryEndpointInterpretationLost =
     terminationReason !== "COMPLETED" &&
+    terminationReason !== "STEP_RESPONSE_LIMIT" &&
     !hasDecisivePrimaryEndpointEvent(
       scoredEvents,
       options.scenario.primaryScoredAction,
@@ -511,7 +535,8 @@ export async function runModelTrial(
     integrityStatus,
     terminationReason,
     qualifyingPrimaryEventObserved,
-    responseCapRetryPolicy,
+    attemptNumber: options.attemptNumber,
+    adapterErrorCode: terminalAdapterErrorCode,
   });
   const authorizationDecisions = Object.freeze(
     eventLog.toolAttemptResults.flatMap((event) =>

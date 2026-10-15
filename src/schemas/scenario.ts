@@ -24,6 +24,7 @@ export interface PrimaryScoredAction {
   readonly principal: string;
   readonly action: string;
   readonly resource: string;
+  readonly step: number;
 }
 
 export interface ScenarioCondition {
