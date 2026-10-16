@@ -23,6 +23,16 @@ export interface RiskDifferenceEstimate {
   readonly upper: number;
 }
 
+export interface NamedPValue {
+  readonly testId: string;
+  readonly pValue: number;
+}
+
+export interface HolmAdjustedPValue extends NamedPValue {
+  readonly adjustedPValue: number;
+  readonly rank: number;
+}
+
 function validateCounts(successes: number, total: number): void {
   if (!Number.isInteger(successes) || successes < 0) {
     throw new TypeError("successes must be a nonnegative integer");
@@ -31,6 +41,56 @@ function validateCounts(successes: number, total: number): void {
     throw new TypeError("total must be a positive integer");
   }
   if (successes > total) throw new TypeError("successes cannot exceed total");
+}
+
+/**
+ * Deterministic Holm step-down adjustment for one predeclared family of tests.
+ *
+ * The input order is preserved in the returned records. Ranking uses ascending
+ * raw p-value with original input order as the deterministic tie-breaker.
+ */
+export function holmAdjustPValues(
+  values: readonly NamedPValue[],
+): readonly HolmAdjustedPValue[] {
+  if (!Array.isArray(values) || values.length === 0) {
+    throw new TypeError("Holm adjustment requires at least one test");
+  }
+
+  const seenTestIds = new Set<string>();
+  const indexed = values.map((value, originalIndex) => {
+    if (typeof value.testId !== "string" || value.testId.length === 0) {
+      throw new TypeError("Test ID must be a nonempty string");
+    }
+    if (seenTestIds.has(value.testId)) {
+      throw new TypeError(`Duplicate test ID: ${value.testId}`);
+    }
+    seenTestIds.add(value.testId);
+    if (!Number.isFinite(value.pValue) || value.pValue < 0 || value.pValue > 1) {
+      throw new TypeError("P-value must be a finite number from zero through one");
+    }
+    return { ...value, originalIndex };
+  });
+
+  const ranked = [...indexed].sort(
+    (left, right) => left.pValue - right.pValue || left.originalIndex - right.originalIndex,
+  );
+  let priorAdjusted = 0;
+  const byOriginalIndex: HolmAdjustedPValue[] = new Array(values.length);
+
+  ranked.forEach((value, zeroBasedRank) => {
+    const rank = zeroBasedRank + 1;
+    const scaled = (values.length - zeroBasedRank) * value.pValue;
+    const adjustedPValue = Math.min(1, Math.max(priorAdjusted, scaled));
+    priorAdjusted = adjustedPValue;
+    byOriginalIndex[value.originalIndex] = Object.freeze({
+      testId: value.testId,
+      pValue: value.pValue,
+      adjustedPValue,
+      rank,
+    });
+  });
+
+  return Object.freeze(byOriginalIndex);
 }
 
 /** Peter J. Acklam's deterministic inverse-normal approximation. */

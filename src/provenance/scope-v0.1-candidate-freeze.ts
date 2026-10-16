@@ -108,6 +108,15 @@ export const SCOPE_V01_CANDIDATE_FREEZE_DECISIONS: FreezeDecisionRegistry =
         primaryContrast: "B_MINUS_C",
         secondaryContrast: "C_MINUS_D",
         crossModelPooling: false,
+        multiplicityPolicy: {
+          primaryEffectSizeEstimates: "NO_MULTIPLICITY_TRANSFORMATION",
+          optionalFisherBcTests: "HOLM_ACROSS_ALL_FORMALLY_INCLUDED_MODELS",
+          optionalFisherCdTests: "EXPLORATORY_UNADJUSTED",
+          preserveRawAndAdjustedBcPValues: true,
+          postHocFamilyRedefinition: false,
+          modelInclusionBasis: "FROZEN_ROSTER_AND_POSITIVE_CONTROL_POLICY",
+          headlineInference: "EFFECT_SIZES_AND_CONFIDENCE_INTERVALS",
+        },
       },
     },
     ANNOTATION_PROTOCOL: {

@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft research and implementation specification. Not yet implemented or validated.
+Draft research and implementation specification. The v0.1 exact-match permission model has a pilot-stage implementation and offline tests, but it is not formally frozen or empirically validated.
 
 ## Design Goal
 

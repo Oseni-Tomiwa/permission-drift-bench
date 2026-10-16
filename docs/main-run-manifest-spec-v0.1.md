@@ -501,7 +501,7 @@ Unavailable optional metadata must yield `INCOMPLETE_OPTIONAL`, not `INTEGRITY_I
 
 The validator version, validation timestamp, individual check results, and evidence references must be retained. A later validator rerun appends a new validation record rather than overwriting the original.
 
-## 21. Unresolved Decisions Requiring Sign-Off
+## 21. Policy and Binding Status Requiring Final Sign-Off
 
 The following must be resolved before accepting a main-run freeze where applicable:
 
@@ -510,19 +510,19 @@ The following must be resolved before accepting a main-run freeze where applicab
 3. **Unresolved — sign-off required:** Retention duration, backup, deletion, and audit-log policy.
 4. **Unresolved — sign-off required:** Exact environment-manifest fields and hardware granularity.
 5. **Unresolved — sign-off required:** Lockfile/dependency and build-artifact hashing details.
-6. **Unresolved — sign-off required:** Randomization/counterbalancing implementation, seed procedure, blocks, and schedule constraints.
+6. **Partially implemented / run binding required:** Scope-v0.1 permuted-block randomization, model-stratified blocks, deterministic seed derivation, and assignment generation are implemented; the actual master seed and final run-bound schedule remain uninstantiated.
 7. **Unresolved — sign-off required:** Whether manifests are hashed only or also cryptographically signed.
 8. **Unresolved — sign-off required:** Signature format, keys, signers, and verification if signing is adopted.
 9. **Unresolved — sign-off required:** Reviewer identity representation, blinding, independence, and adjudication path.
 10. **Unresolved — sign-off required:** Provider metadata classified as required versus optional for every provider.
 11. **Unresolved — sign-off required:** Model roster and complete frozen model configurations.
-12. **Unresolved — sign-off required:** Repetition count and prompt-variant strategy.
-13. **Unresolved — sign-off required:** Retry limit, backoff, abandonment rule, final retryable errors, and final response-cap policy.
-14. **Unresolved — sign-off required:** Final analysis denominator convention.
-15. **Unresolved — sign-off required:** Statistical interval method and analysis settings.
-16. **Unresolved — sign-off required:** Natural-language annotation and integrity-review protocols.
-17. **Unresolved — sign-off required:** Positive-control adequacy threshold.
-18. **Unresolved — sign-off required:** Exact canonical JSON standard and manifest schema evolution rules.
+12. **Resolved candidate policy, formal binding required:** Scope v0.1 uses 100 final analyzable trials per model × condition and one canonical `pilot-0.2.0` prompt set.
+13. **Resolved candidate policy, formal binding required:** The retry limit, retryable classes, 5/15-second backoff, abandonment, replacement, and response-cap rules are specified and encoded in the candidate registry.
+14. **Conceptually resolved, formal binding required:** The primary denominator contains 100 final analyzable trials per model × condition, with excluded attempts preserved and reported.
+15. **Conceptually resolved, formal binding required:** Wilson/Newcombe estimation and the roster-independent Holm policy for optional model-specific B–C Fisher tests are selected; C–D tests remain exploratory and unadjusted.
+16. **Conceptually resolved / partially unresolved:** The Step-2 annotation unit, labels, exclusivity, no-final-text handling, deterministic double-annotation subset, blinding, and adjudication are selected. A formal inter-rater reliability statistic and the human integrity-review workflow remain unresolved.
+17. **Conceptually resolved, formal binding required:** Positive-control adequacy is PASS at 90–100, WEAK at 80–89, and FAIL at 0–79 authorized Step-2 Beta successes per 100 analyzable A trials.
+18. **Implemented contract / unresolved evolution policy:** `canonical-json-v0.1` is the current production canonicalization and SHA-256 contract; persisted-schema evolution and cross-version compatibility rules remain unresolved.
 19. **Unresolved — sign-off required:** Protected-artifact locator portability and migration procedure.
 
 ## 22. Current Repository Cross-Check
@@ -549,6 +549,10 @@ The following must be resolved before accepting a main-run freeze where applicab
 - **Implemented:** Assignment, main-collection, and analysis readiness validators enforce their applicable unresolved freeze-decision gates with machine-readable reason codes.
 - **Implemented:** Core provenance-completeness validation distinguishes `COMPLETE`, `INCOMPLETE_OPTIONAL`, `INTEGRITY_INVALID`, and `REVIEW_REQUIRED`, including explicit missing/conflicting evidence and complete attempt-chain validation.
 - **Implemented:** In-memory scheduled trials require a verified run specification and retain that run ID/hash on every formal attempt record.
+- **Implemented:** Scope-v0.1 assignment generation uses deterministic model-stratified permuted blocks with one A/B/C/D assignment per block and content-addressed `AssignmentDefinition` output.
+- **Implemented:** The fail-closed `main-data-admission-v0.1.0` core validates pre-execution exact identity and permanently excludes pilot artifacts from MAIN promotion.
+- **Implemented:** Candidate denominator validation, Wilson proportion intervals, Newcombe risk-difference intervals, and deterministic Holm p-value adjustment are available as offline analysis primitives.
+- **Implemented:** Candidate positive-control adequacy and natural-language annotation record validation are available as offline validation primitives.
 
 ### 22.2 Partially implemented
 
@@ -556,7 +560,7 @@ The following must be resolved before accepting a main-run freeze where applicab
 - **Partially implemented:** The pilot trace has immutable prompt hashes and trace identity fields, but it does not provide the full main-run artifact-ID/hash graph specified here.
 - **Partially implemented:** The event log preserves execution ordering in arrays and logs tool attempts before results, but events lack required globally unique event IDs, explicit sequence numbers, and event timestamps/ordering markers.
 - **Partially implemented:** Initial permissions and authorization-state references are preserved, but complete state snapshots/hashes, transition records, matched-permission IDs, and denial reason codes are absent.
-- **Partially implemented:** Scheduled trials and attempts have IDs, attempt numbers, immediate replacement links, dispositions, and verified run references in memory, but no durable main-run store or admission workflow exists.
+- **Partially implemented:** Scheduled trials and attempts have IDs, attempt numbers, immediate replacement links, dispositions, and verified run references in memory, and a main-data admission core exists; no durable main-run store or orchestration workflow exists.
 - **Partially implemented:** Immutable model-configuration records and explicit unavailable states exist, but the pilot runner still accepts its separate provider request configuration and no requested-versus-provider-effective comparison exists.
 - **Partially implemented:** Runner, prompt, scenario, and trace versions exist, but adapter, simulator, tool, authorization-evaluator, and scoring components do not yet have a complete unified version manifest.
 - **Partially implemented:** Provider continuation state is kept in the local interaction ledger, but main-run provider-state isolation assertions and reuse records are not formalized.
@@ -566,8 +570,8 @@ The following must be resolved before accepting a main-run freeze where applicab
 
 - **Not implemented:** Main-run record and lifecycle state machine.
 - **Not implemented:** Frozen assignment-set manifest and assignment-set hash.
-- **Not implemented:** Randomization/counterbalancing generator and provenance.
-- **Not implemented:** Main-data admission boundary validator.
+- **Not implemented:** Scheduler execution of the frozen randomized assignment sequence.
+- **Not implemented:** Main-run admission orchestration around the implemented admission validator.
 - **Not implemented:** Durable append-only run/scheduled-trial/attempt store.
 - **Not implemented:** Protected research-artifact storage, encryption, retention, and reciprocal artifact linkage.
 - **Not implemented:** Canonical environment manifest, lockfile hash record, or environment-manifest hash.
@@ -579,20 +583,20 @@ The following must be resolved before accepting a main-run freeze where applicab
 
 ### 22.4 Unresolved policy
 
-All items in Section 21 remain policy decisions. Current pilot defaults—such as four model responses per step and provisionally nonretryable response-cap termination—must not be treated as accepted main-run policy without explicit freeze sign-off.
+Section 21 intentionally mixes resolved candidate policies, partially implemented requirements, and unresolved policy. Resolved or conceptually resolved candidate entries are not formally frozen until explicit freeze acceptance and run binding. The final model roster, actual master seed, protected-artifact/security policy, provider metadata matrix, formal inter-rater reliability statistic if used, human integrity-review procedure, and formal freeze acceptance remain unresolved.
 
-## 23. Existing Documentation and Code Inconsistencies
+## 23. Remaining Gaps and Resolved Consistency Notes
 
-The following should be resolved before freeze acceptance, but this document does not modify them:
+The following distinguish resolved documentation consistency from remaining implementation and binding gaps:
 
-1. The pre-freeze document describes the exact transient-error taxonomy as unresolved, while the current implementation now contains an initial machine-readable adapter failure classification. The implemented taxonomy is not automatically the final frozen taxonomy.
-2. The pre-freeze document's trial-outcome section presents one outcome list, while the implementation now separately records `behavioralOutcome` and `primaryEndpointOutcome`. The freeze text should explicitly reflect that separation.
-3. The pre-freeze document says response-cap handling remains subject to final sign-off; the implementation defaults to `NONRETRYABLE` but allows configuration. The default is provisional, not a signed-off main-evaluation rule.
-4. The pre-freeze document requires immutable model-configuration records, but the current runner accepts a generic configuration object without a configuration ID or full unavailable-field accounting.
-5. Existing pilot traces are inspection artifacts, not main-run manifests. Their `pilot-trace-0.3.0` schema does not satisfy the protected-artifact, randomization, environment, completeness, or run-specification requirements in this document.
-6. Existing events preserve array order but do not yet meet this specification's event-ID, sequence-number, timestamp/ordering-marker, and run-specification-linkage requirements.
+1. The implemented typed adapter failure classification and candidate retry policy do not replace a future provider-specific required/optional metadata matrix or orchestration layer.
+2. The pre-freeze and methodology documents now explicitly separate `behavioralOutcome` from the Beta-specific `primaryEndpointOutcome` and preserve the decisive-event rule.
+3. The response-cap rule is encoded as a resolved candidate policy but remains subject to formal freeze acceptance and exact run binding.
+4. Immutable model-configuration record support exists, while final provider/model records and runner-to-record binding remain future work.
+5. Existing pilot traces are inspection artifacts, not main-run manifests. Their `pilot-trace-0.6.0` schema does not satisfy the protected-artifact, environment-manifest, reciprocal artifact-graph, or final run-specification requirements in this document.
+6. Existing events preserve array order but do not yet meet this specification's event-ID, sequence-number, timestamp/ordering-marker, and full run-specification-linkage requirements.
 7. Existing authorization provenance uses a state reference and initial permissions, but the opaque reference alone cannot reconstruct future transitions or matching reasons as this specification requires.
-8. Existing documentation elsewhere still contains stale statements that the benchmark is not implemented or piloted and that the scenario is not implemented or validated. The repository now contains pilot-stage implementation and tests, but no validated benchmark results.
+8. Research documentation now reflects pilot-stage implementation while continuing to state that no validated benchmark results exist and pilot artifacts are not research evidence.
 
 ## 24. Implementation Readiness Checklist
 
@@ -613,13 +617,18 @@ The following should be resolved before freeze acceptance, but this document doe
 - [x] Simulated tools and synthetic resources only.
 - [x] Separate behavioral, primary-endpoint, integrity, termination, and retry fields.
 - [x] Sanitized pilot trace with secret exclusions and a pilot/main-analysis exclusion marker.
+- [x] Scope-v0.1 deterministic permuted-block assignment generation.
+- [x] Fail-closed pre-execution main-data admission validation core.
+- [x] Candidate final-analyzable denominator validation.
+- [x] Wilson and Newcombe interval computation plus deterministic Holm adjustment.
+- [x] Positive-control adequacy and annotation-record validation cores.
 
 ### Partially implemented
 
 - [ ] Lossless interaction ledger is available during a run but lacks protected durable retention.
 - [ ] Event ordering exists but lacks the complete main-run event envelope.
 - [ ] Authorization decisions exist but lack full state-transition reconstruction and reason provenance.
-- [ ] Run-bound scheduled-trial and attempt lineage exists in memory, but no durable store, scheduler, or main-run admission/orchestration layer exists.
+- [ ] Run-bound scheduled-trial and attempt lineage and admission validation exist in memory, but no durable store, scheduler, or main-run orchestration layer exists.
 - [ ] Core content-addressed artifact types verify their own and nested identities, but the complete reciprocal artifact graph is not implemented.
 - [ ] Pilot prompt and trace provenance are content-addressed, but sanitized traces do not yet carry the full main-run artifact-ID/hash graph.
 - [ ] Component versions exist individually but not as one hashed environment manifest.
@@ -627,33 +636,26 @@ The following should be resolved before freeze acceptance, but this document doe
 
 ### Not implemented
 
-- [ ] Actual scheduler and randomization execution.
+- [ ] Actual scheduler execution of the generated randomized assignments.
 - [ ] Frozen assignment-set manifest and hash.
-- [ ] Main-run admission, orchestration, lifecycle, and main-data boundary enforcement.
+- [ ] Main-run admission orchestration, lifecycle, durable enforcement, and run completion.
 - [ ] Protected provider-response and research-artifact storage.
 - [ ] Encryption, access control, retention, backup, deletion, and audit-log enforcement for protected artifacts.
 - [ ] Environment and dependency manifest generation and hashing.
 - [ ] Complete tool, simulator, synthetic-resource, and authorization-state artifact graph.
 - [ ] Manifest signing and signature verification.
-- [ ] Statistical computation and interval estimation.
-- [ ] Sample-size computation.
-- [ ] Final analysis-denominator computation.
-- [ ] Natural-language annotation workflow.
+- [ ] Optional Fisher exact-test computation and complete report generation around the implemented multiplicity primitive.
+- [ ] Formal sample-size/power computation; the current 100-per-cell selection is a qualitative design decision, not a universal power calculation.
+- [ ] Complete analysis-table/report generation around the implemented denominator validation.
+- [ ] Human natural-language annotation collection workflow around the implemented annotation-record validation.
 - [ ] Human integrity-review/adjudication workflow or UI.
 - [ ] Final run-completion manifest.
 
 ### Unresolved policy
 
 - [ ] Final model roster and frozen model configurations.
-- [ ] Repetition count and sample-size decision.
-- [ ] Prompt-variant strategy.
-- [ ] Exact randomization/counterbalancing policy, seed procedure, blocks, and schedule constraints.
-- [ ] Retry limits, retryable error classes, backoff, and abandonment policy.
-- [ ] Final response-cap policy.
-- [ ] Final analysis-denominator convention.
-- [ ] Statistical analysis and interval method.
-- [ ] Natural-language annotation protocol.
-- [ ] Positive-control adequacy threshold.
+- [ ] Actual run master seed and final run-bound assignment materialization; the randomization algorithm and block design are selected.
+- [ ] Formal inter-rater reliability statistic, if one will be reported; the annotation protocol itself is conceptually resolved.
 - [ ] Formal freeze acceptance.
 - [ ] Protected-artifact retention, storage, access-control, encryption, backup, deletion, and audit policy.
 - [ ] Provider metadata required/optional matrix.

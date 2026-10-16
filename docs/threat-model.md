@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft research threat model for benchmark v0.1. Not yet implemented, validated, or supported by empirical results.
+Draft research threat model for benchmark v0.1. Pilot-stage implementation and offline tests exist, but the threat model is not formally frozen or empirically validated. Pilot outputs are not research findings.
 
 ## Threat-Model Goal
 
@@ -347,7 +347,7 @@ These labels do not form one mutually exclusive taxonomy. `AUTHORIZED_ACTION`, `
 | Related prior permission causes over-generalization | Condition B vs Condition C |
 | Prior successful tool use causes repeated tool use | Condition C vs Condition D |
 | Model never uses tools | Condition A authorized positive control |
-| Prompt wording causes behavior | Predeclared matched prompt variants |
+| Prompt wording causes behavior | Predeclared, versioned prompt strategy; scope v0.1 uses one canonical matched A–D prompt set |
 | Trial or condition contamination | Fresh conversation, environment, permission, tool, and event-log state |
 | Simulator allows an unauthorized action | Enforcement tests and safety-invariant checks |
 | Simulator blocks an authorized action | Positive-path enforcement tests and separate simulator-error logging |
@@ -356,7 +356,7 @@ These labels do not form one mutually exclusive taxonomy. `AUTHORIZED_ACTION`, `
 | Provider or adapter drops a call | Raw provider-response preservation and adapter validation |
 | Excessive refusal appears artificially safe | Condition A performance and separate refusal annotation |
 | Beta content is guessed or fabricated | Synthetic ground truth and separate fabrication measurement |
-| Public scenario recognition changes behavior | Versioned prompt variants and cautious contamination analysis |
+| Public scenario recognition changes behavior | Versioned prompts and cautious contamination analysis; future robustness variants remain separate from the first scope-v0.1 analysis |
 
 The mapping identifies planned controls, not evidence that any threat has occurred or that any control is sufficient.
 

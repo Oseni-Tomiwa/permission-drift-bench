@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   STATISTICAL_METHOD_VERSION,
+  holmAdjustPValues,
   newcombeRiskDifferenceInterval,
   wilsonInterval,
 } from "../../dist/evaluator/statistics.js";
@@ -70,4 +71,78 @@ test("Newcombe handles all-failure and maximally separated boundaries without Wa
 
 test("statistical method contract has an explicit version", () => {
   assert.equal(STATISTICAL_METHOD_VERSION, "scope-statistics-v0.1.0");
+});
+
+test("Holm adjustment preserves a single test unchanged", () => {
+  assert.deepEqual(holmAdjustPValues([
+    { testId: "model-a:B_MINUS_C", pValue: 0.041 },
+  ]), [
+    {
+      testId: "model-a:B_MINUS_C",
+      pValue: 0.041,
+      adjustedPValue: 0.041,
+      rank: 1,
+    },
+  ]);
+});
+
+test("Holm adjustment is deterministic for three ordered and reverse-ordered tests", () => {
+  const ordered = holmAdjustPValues([
+    { testId: "model-a:B_MINUS_C", pValue: 0.01 },
+    { testId: "model-c:B_MINUS_C", pValue: 0.03 },
+    { testId: "model-b:B_MINUS_C", pValue: 0.04 },
+  ]);
+  assert.deepEqual(ordered, [
+    { testId: "model-a:B_MINUS_C", pValue: 0.01, adjustedPValue: 0.03, rank: 1 },
+    { testId: "model-c:B_MINUS_C", pValue: 0.03, adjustedPValue: 0.06, rank: 2 },
+    { testId: "model-b:B_MINUS_C", pValue: 0.04, adjustedPValue: 0.06, rank: 3 },
+  ]);
+
+  const reverse = holmAdjustPValues([...ordered]
+    .reverse()
+    .map(({ testId, pValue }) => ({ testId, pValue })));
+  assert.deepEqual(reverse.map(({ testId }) => testId), [
+    "model-b:B_MINUS_C",
+    "model-c:B_MINUS_C",
+    "model-a:B_MINUS_C",
+  ]);
+  assert.deepEqual(
+    Object.fromEntries(reverse.map(({ testId, adjustedPValue }) => [testId, adjustedPValue])),
+    Object.fromEntries(ordered.map(({ testId, adjustedPValue }) => [testId, adjustedPValue])),
+  );
+});
+
+test("Holm adjustment handles ties, boundaries, and monotonic adjusted values", () => {
+  const adjusted = holmAdjustPValues([
+    { testId: "near-one", pValue: 0.999999999999 },
+    { testId: "tied-first", pValue: 0.02 },
+    { testId: "near-zero", pValue: 1e-12 },
+    { testId: "tied-second", pValue: 0.02 },
+  ]);
+  assert.deepEqual(adjusted.map(({ testId }) => testId), [
+    "near-one",
+    "tied-first",
+    "near-zero",
+    "tied-second",
+  ]);
+  const ranked = [...adjusted].sort((left, right) => left.rank - right.rank);
+  for (let index = 1; index < ranked.length; index += 1) {
+    assert.ok(ranked[index].adjustedPValue >= ranked[index - 1].adjustedPValue);
+  }
+  assert.equal(adjusted[1].rank, 2);
+  assert.equal(adjusted[3].rank, 3);
+  assert.equal(adjusted[2].adjustedPValue, 4e-12);
+  assert.equal(adjusted[0].adjustedPValue, 0.999999999999);
+});
+
+test("Holm adjustment validates p-values and stable test identities", () => {
+  assert.throws(() => holmAdjustPValues([]), /at least one/i);
+  assert.throws(() => holmAdjustPValues([
+    { testId: "duplicate", pValue: 0.1 },
+    { testId: "duplicate", pValue: 0.2 },
+  ]), /duplicate/i);
+  for (const pValue of [-0.01, 1.01, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.throws(() => holmAdjustPValues([{ testId: "invalid", pValue }]), /p-value/i);
+  }
+  assert.throws(() => holmAdjustPValues([{ testId: "", pValue: 0.5 }]), /test id/i);
 });
