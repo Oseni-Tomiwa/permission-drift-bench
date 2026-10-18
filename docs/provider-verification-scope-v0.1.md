@@ -224,13 +224,19 @@ Any returned value must continue to be preserved separately from the requested m
 
 The final run specification must record the applicable organization/project retention posture separately from model configuration. It must not infer that a request-level switch guarantees zero provider retention.
 
+## Candidate Roster Sign-off and Retention Gate
+
+The approved non-live roster decisions are recorded in the immutable candidate record `scope-v0.1-roster-signoff-v0.1:sha256:2298a36e7c7134a19185590f63c0fbbf9f808dd76390785f66419c9eb0b7652c`. It binds the exact OpenAI, Google, and Anthropic candidate configuration IDs to the bounded `KEEP_V1BETA` decision, accepted OpenAI/Google snapshot limitations, the three returned-model policies, and Anthropic's documented pinned identifier. It contains no live-validation or account-retention state and is not formal freeze acceptance.
+
+Separate `provider-retention-posture-v0.1` records reproduce the relevant request controls from each candidate configuration and distinguish them from account facts. Their evidence types are limited to `AUTHORITATIVE_DOCUMENTATION`, `USER_ATTESTATION`, `ACCOUNT_UI_VERIFICATION`, `ORGANIZATION_POLICY`, or `UNVERIFIED`. All three candidate records currently leave organization/project reference, account-retention posture, zero-data-retention status, verification time, and review decision unresolved because those facts have not been supplied. No account ID, credential, or secret is required in these records.
+
+The pre-main-run retention gate is fail-closed. Its result is `ACCEPTED`, `UNRESOLVED`, or `REJECTED`. `ACCEPTED` requires request controls matching the candidate configuration plus a known, evidenced, reviewed organization/project posture. Zero data retention is not universally required, but a record may not imply it without evidence. The deterministic roster-readiness evaluator also checks candidate hashes/schema, candidate sign-off, live validation, blocking provider ambiguity, and formal acceptance; it reports blockers without changing `MODEL_ROSTER_CONFIGURATIONS`.
+
 ## Remaining Roster Blockers
 
-1. Google API-surface sign-off: accept `KEEP_V1BETA` for scope-v0.1 or separately approve, implement, and validate a v1 candidate.
-2. Snapshot-limitation sign-off for OpenAI and Google: accept that no separately dated immutable identifier is documented and preserve requested/returned identity evidence.
-3. Returned-model-policy sign-off for OpenAI and Anthropic: accept the conservative exact-match policy despite the absence of a separate provider guarantee about response-string normalization.
-4. Anthropic live integration remains `PENDING_CREDENTIALS`. It must not be recorded as a provider/model failure.
-5. Before main collection, record and approve the actual organization/project retention posture for each provider. This operational attestation is separate from request-level storage fields.
-6. Explicitly resolve `MODEL_ROSTER_CONFIGURATIONS` and formal freeze acceptance only after the candidate records and evidence are internally consistent.
+1. Record and approve the actual organization/project retention posture for OpenAI, Google, and Anthropic. Each current posture gate is `UNRESOLVED`; request-level switches do not settle account-level retention.
+2. Anthropic live integration remains `PENDING_CREDENTIALS`. It must not be recorded as a provider/model failure.
+3. Explicitly accept the final roster and resolve `MODEL_ROSTER_CONFIGURATIONS` only after the preceding evidence is complete.
+4. Complete formal freeze acceptance separately. The candidate roster sign-off does not perform that action.
 
 `MODEL_ROSTER_CONFIGURATIONS` cannot yet be resolved.

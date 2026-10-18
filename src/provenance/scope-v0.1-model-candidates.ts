@@ -77,7 +77,7 @@ export const SCOPE_V01_MODEL_ASYMMETRY_REGISTER = Object.freeze([
   asymmetry("background", "INTENTIONALLY_DIFFERENT", "Google sends false, OpenAI intentionally omits the supported control and remains foreground, and Anthropic Messages has no applicable background field."),
   asymmetry("continuationState", "INTENTIONALLY_DIFFERENT", "All continuation is client-managed, but provider reasoning/thought state formats differ."),
   asymmetry("automaticSdkRetries", "MATCHED", "All intended benchmark clients use zero automatic retries."),
-  asymmetry("modelSnapshotMutability", "AMBIGUOUS_REQUIRES_REVIEW", "Anthropic's requested identifier is a documented pinned snapshot; OpenAI and Google have no separately documented dated immutable identifier."),
+  asymmetry("modelSnapshotMutability", "INTENTIONALLY_DIFFERENT", "The candidate sign-off accepts Anthropic's documented pinned identifier and the explicit OpenAI/Google limitation that no separately verified dated immutable identifier is documented."),
   asymmetry("returnedModelVerification", "INTENTIONALLY_DIFFERENT", "OpenAI and Anthropic require exact returned identity when present; Google is observed separately without inferred alias equivalence."),
 ]);
 export const SCOPE_V01_MODEL_LIVE_VALIDATION: Readonly<Record<ScopeV01Provider, LiveValidationStatus>> = Object.freeze({

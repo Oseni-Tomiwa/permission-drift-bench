@@ -44,7 +44,7 @@ test("provider-specific settings and asymmetries are explicit", () => {
   assert.equal(dimensions.get("reasoningControl"), "INTENTIONALLY_DIFFERENT");
   assert.equal(dimensions.get("parallelToolCalls"), "PROVIDER_UNAVAILABLE");
   assert.equal(dimensions.get("background"), "INTENTIONALLY_DIFFERENT");
-  assert.equal(dimensions.get("modelSnapshotMutability"), "AMBIGUOUS_REQUIRES_REVIEW");
+  assert.equal(dimensions.get("modelSnapshotMutability"), "INTENTIONALLY_DIFFERENT");
 });
 
 test("approved corrections change only the OpenAI and Anthropic content identities", () => {
