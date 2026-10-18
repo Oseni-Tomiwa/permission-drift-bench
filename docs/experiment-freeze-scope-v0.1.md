@@ -170,7 +170,7 @@ The records freeze or explicitly classify each of the following:
 
 Unsupported settings are represented explicitly rather than assigned invented defaults. Provider defaults that cannot be fixed are identified as provider-controlled. Google returned-model metadata is preserved under `OBSERVE_SEPARATELY`; no alias equivalence is inferred. OpenAI and Anthropic use `EXACT_REQUESTED_IF_PRESENT`, while absence of an optional returned-model field is not itself an integrity failure.
 
-**Unresolved — sign-off required:** Authoritative external verification of provider model-name mutability, dated/snapshot identifier availability, API stability, and provider-wide retention policy remains pending. No candidate identifier will be replaced without approval. `MODEL_ROSTER_CONFIGURATIONS` remains `UNRESOLVED` until required validation and explicit sign-off are complete.
+**Unresolved — sign-off required:** The authoritative evidence review is recorded in `docs/provider-verification-scope-v0.1.md`. It confirms the requested model availability and selected API capabilities, but identifies approval-required candidate corrections for OpenAI background-state representation and Anthropic pinned-snapshot representation. It also leaves explicit sign-off on Google v1beta, OpenAI/Google snapshot limitations, OpenAI/Anthropic returned-model policies, Anthropic `PENDING_CREDENTIALS` integration validation, and provider-organization retention posture. No candidate identifier or API surface will be replaced without approval. `MODEL_ROSTER_CONFIGURATIONS` remains `UNRESOLVED` until those blockers and formal sign-off are complete.
 
 ## 8. Repetition and Sample-Size Decision
 
