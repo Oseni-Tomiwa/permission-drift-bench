@@ -14,6 +14,7 @@ test("binding verifies exact identity and derives adapter request configuration"
   assert.equal(binding.toolChoice, "auto");
   assert.equal(binding.responseCapPerStep, 4);
   assert.deepEqual(binding.sdkClientConfiguration, { maxRetries: 0 });
+  assert.equal("background" in binding.requestConfiguration, false);
 });
 
 test("binding fails closed for model, backend, API, adapter, or SDK mismatch", () => {
@@ -27,6 +28,13 @@ test("returned model exact policy rejects conflicts but permits unavailable meta
   const record = candidateModelConfiguration("openai");
   assert.doesNotThrow(() => verifyReturnedModelBinding(record, null));
   assert.doesNotThrow(() => verifyReturnedModelBinding(record, "gpt-6.1-sol"));
+  assert.throws(() => verifyReturnedModelBinding(record, "different-model"), (error) => error.errorCode === "UNSUPPORTED_CONFIGURATION" && error.integrityFailureCode === "WRONG_MODEL_CONFIGURATION");
+});
+
+test("Anthropic pinned requested identity retains exact returned-model enforcement", () => {
+  const record = candidateModelConfiguration("anthropic");
+  assert.equal(record.identity.requestedModel, "claude-sonnet-5-5");
+  assert.doesNotThrow(() => verifyReturnedModelBinding(record, "claude-sonnet-5-5"));
   assert.throws(() => verifyReturnedModelBinding(record, "different-model"), (error) => error.errorCode === "UNSUPPORTED_CONFIGURATION" && error.integrityFailureCode === "WRONG_MODEL_CONFIGURATION");
 });
 

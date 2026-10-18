@@ -145,15 +145,15 @@ Candidate configuration identities are:
 
 | Provider | Candidate model | Candidate configuration ID |
 | --- | --- | --- |
-| OpenAI | `gpt-6.1-sol` | `model-configuration-v0.2:sha256:75fcb2b1519e0d81d7729203f011e8a95f85f1f762bc301e37e58fcf3cbc338a` |
+| OpenAI | `gpt-6.1-sol` | `model-configuration-v0.2:sha256:cd7eb337f3bc69c9a32748adb1d55bbdb2fcd98bdcfc0e8ba0b4af4ceadbd558` |
 | Google | `gemini-3.8-flash` | `model-configuration-v0.2:sha256:ac2644e52d180fac8e143c51465423e559bdc75f0d8ac74295697cd0bcd086f5` |
-| Anthropic | `claude-sonnet-5-5` | `model-configuration-v0.2:sha256:eae7b81b309ba2c5dbd230c239cfe81bcf9b613d3dffab4488cff4165c206d1b` |
+| Anthropic | `claude-sonnet-5-5` | `model-configuration-v0.2:sha256:8901f9128c70f55a9e7c96620fabb57b7db2a15967dd41532c100573e0657d9d` |
 
 The records freeze or explicitly classify each of the following:
 
 - [x] provider, backend, and API surface;
 - [x] exact requested model identifier;
-- [x] model snapshot/version as unavailable where not exposed;
+- [x] model snapshot/version as unavailable where not exposed, with Anthropic's canonical pinned identifier recorded directly;
 - [x] temperature and `top_p` as intentionally omitted or incompatible where applicable;
 - [x] reasoning/thinking setting;
 - [x] maximum output tokens;
@@ -170,7 +170,7 @@ The records freeze or explicitly classify each of the following:
 
 Unsupported settings are represented explicitly rather than assigned invented defaults. Provider defaults that cannot be fixed are identified as provider-controlled. Google returned-model metadata is preserved under `OBSERVE_SEPARATELY`; no alias equivalence is inferred. OpenAI and Anthropic use `EXACT_REQUESTED_IF_PRESENT`, while absence of an optional returned-model field is not itself an integrity failure.
 
-**Unresolved — sign-off required:** The authoritative evidence review is recorded in `docs/provider-verification-scope-v0.1.md`. It confirms the requested model availability and selected API capabilities, but identifies approval-required candidate corrections for OpenAI background-state representation and Anthropic pinned-snapshot representation. It also leaves explicit sign-off on Google v1beta, OpenAI/Google snapshot limitations, OpenAI/Anthropic returned-model policies, Anthropic `PENDING_CREDENTIALS` integration validation, and provider-organization retention posture. No candidate identifier or API surface will be replaced without approval. `MODEL_ROSTER_CONFIGURATIONS` remains `UNRESOLVED` until those blockers and formal sign-off are complete.
+**Unresolved — sign-off required:** The authoritative evidence review is recorded in `docs/provider-verification-scope-v0.1.md`. The approved OpenAI background-state and Anthropic pinned-snapshot corrections are incorporated in the candidate identities above. Explicit sign-off remains required for Google v1beta, OpenAI/Google snapshot limitations, OpenAI/Anthropic returned-model policies, Anthropic `PENDING_CREDENTIALS` integration validation, and provider-organization retention posture. No candidate identifier or API surface will be replaced without approval. `MODEL_ROSTER_CONFIGURATIONS` remains `UNRESOLVED` until those blockers and formal sign-off are complete.
 
 ## 8. Repetition and Sample-Size Decision
 

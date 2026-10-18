@@ -2,7 +2,7 @@
 
 ## Status
 
-Pre-freeze evidence review, completed 2026-10-18. This document reconciles the current `model-configuration-v0.2` candidate records with provider documentation and repository implementation. It does not freeze the roster, change a candidate identity, authorize main-data collection, or reinterpret pilot observations as research evidence.
+Pre-freeze evidence review, completed 2026-10-18 and reconciled with the two approved candidate-record corrections. This document describes the current `model-configuration-v0.2` candidate records against provider documentation and repository implementation. It does not freeze the roster, authorize main-data collection, or reinterpret pilot observations as research evidence.
 
 ## Classification Key
 
@@ -52,7 +52,7 @@ Provider documentation was accessed on 2026-10-18. Repository implementation obs
 
 ### OpenAI Candidate
 
-Candidate identity remains `gpt-6.1-sol` on the OpenAI Responses API. No record is changed by this review.
+The requested identity remains `gpt-6.1-sol` on the OpenAI Responses API. The approved background-state correction changes only the content-addressed candidate record, not the requested model or adapter request behavior.
 
 | Candidate field | Current value | Classification | Reconciliation |
 | --- | --- | --- | --- |
@@ -71,7 +71,7 @@ Candidate identity remains `gpt-6.1-sol` on the OpenAI Responses API. No record 
 | `settings.toolChoice` | `auto` | `VERIFIED_AUTHORITATIVE` | Responses documents `tool_choice`; the authored bundle supplies `auto`. |
 | `settings.parallelToolCalls` | `false` | `VERIFIED_AUTHORITATIVE` | Responses documents `parallel_tool_calls` as an optional Boolean. |
 | `settings.providerStorage` | `false` | `VERIFIED_AUTHORITATIVE` | `store:false` disables Response-object persistence; it is not a provider-wide ZDR guarantee. |
-| `settings.background` | not applicable | `CANDIDATE_CHANGE_REQUIRES_APPROVAL` | Responses supports optional `background`. The adapter omits it and therefore uses foreground behavior; `OMITTED` is more accurate than `NOT_APPLICABLE`. Any correction changes the configuration hash. |
+| `settings.background` | omitted intentionally | `VERIFIED_AUTHORITATIVE` | Responses supports optional `background`; the benchmark omits it and remains on the existing foreground path. The adapter request behavior is unchanged. |
 | `settings.providerSession` | `NONE` | `VERIFIED_AUTHORITATIVE` | The benchmark does not create a Conversation object and uses client-managed state. |
 | `settings.continuationStrategy` | local stateless transcript reconstruction | `VERIFIED_AUTHORITATIVE` | OpenAI documents replaying complete prior output with `store:false`. |
 | `settings.providerAddressableContinuationId` | omitted | `VERIFIED_AUTHORITATIVE` | `previous_response_id` is optional and is not used for this stateless path. |
@@ -88,7 +88,7 @@ Candidate identity remains `gpt-6.1-sol` on the OpenAI Responses API. No record 
 
 Provider classification: `BLOCKED`.
 
-Exact blockers are approval of the `background` record correction, explicit acceptance of the absence of a separately documented fixed snapshot, and explicit acceptance of the conservative returned-model policy.
+Exact blockers are explicit acceptance of the absence of a separately documented fixed snapshot and explicit acceptance of the conservative returned-model policy.
 
 ### Google Candidate
 
@@ -142,7 +142,7 @@ Candidate identity remains `claude-sonnet-5-5` on the Anthropic Messages API. Li
 | `identity.requestedModel` | `claude-sonnet-5-5` | `VERIFIED_AUTHORITATIVE` | The exact ID is documented and currently available. |
 | `identity.adapterName`, `identity.adapterVersion` | repository values | `VERIFIED_IMPLEMENTATION_ONLY` | These are benchmark implementation identities. |
 | `identity.sdkPackage`, `identity.sdkVersion` | `@anthropic-ai/sdk@0.133.0` | `VERIFIED_IMPLEMENTATION_ONLY` | Pinned locally; not a provider model guarantee. |
-| `settings.snapshotVersion` | unavailable | `CANDIDATE_CHANGE_REQUIRES_APPROVAL` | Anthropic documents post-4.6 dateless IDs as canonical pinned snapshots. The record should represent `claude-sonnet-5-5` as the fixed snapshot identity rather than claim snapshot identity is unavailable. Any correction changes the configuration hash. |
+| `settings.snapshotVersion` | `claude-sonnet-5-5` | `VERIFIED_AUTHORITATIVE` | Anthropic documents post-4.6 dateless IDs as canonical pinned snapshots. The candidate now records the requested identifier itself as the fixed snapshot identity; no dated alias is invented. |
 | `settings.temperature`, `settings.topP` | omitted as incompatible | `VERIFIED_AUTHORITATIVE` | Non-default sampling values return an error on Claude Sonnet 5.5; omission is documented. |
 | `settings.reasoning` | effort `medium` | `VERIFIED_AUTHORITATIVE` | Sonnet 5.5 supports `medium`; Anthropic recommends it for well-specified multistep tool use. |
 | `settings.thinkingMode` | `adaptive` | `VERIFIED_AUTHORITATIVE` | Adaptive thinking is supported and on by default; the adapter sends it explicitly. |
@@ -168,7 +168,7 @@ Candidate identity remains `claude-sonnet-5-5` on the Anthropic Messages API. Li
 
 Provider classification: `BLOCKED`.
 
-Exact blockers are `PENDING_CREDENTIALS` live Condition-A integration validation, approval of the snapshot-field correction, and explicit acceptance of the conservative returned-model policy.
+Exact blockers are `PENDING_CREDENTIALS` live Condition-A integration validation and explicit acceptance of the conservative returned-model policy.
 
 ## Google v1beta Versus v1 Decision Memo
 
@@ -226,13 +226,11 @@ The final run specification must record the applicable organization/project rete
 
 ## Remaining Roster Blockers
 
-1. OpenAI candidate correction approval: represent foreground/background as `OMITTED` rather than `NOT_APPLICABLE`, then regenerate the content-addressed candidate and dependent references.
-2. Anthropic candidate correction approval: represent `claude-sonnet-5-5` as the documented pinned snapshot identity, then regenerate the content-addressed candidate and dependent references.
-3. Google API-surface sign-off: accept `KEEP_V1BETA` for scope-v0.1 or separately approve, implement, and validate a v1 candidate.
-4. Snapshot-limitation sign-off for OpenAI and Google: accept that no separately dated immutable identifier is documented and preserve requested/returned identity evidence.
-5. Returned-model-policy sign-off for OpenAI and Anthropic: accept the conservative exact-match policy despite the absence of a separate provider guarantee about response-string normalization.
-6. Anthropic live integration remains `PENDING_CREDENTIALS`. It must not be recorded as a provider/model failure.
-7. Before main collection, record and approve the actual organization/project retention posture for each provider. This operational attestation is separate from request-level storage fields.
-8. Explicitly resolve `MODEL_ROSTER_CONFIGURATIONS` and formal freeze acceptance only after the approved candidate records and evidence are internally consistent.
+1. Google API-surface sign-off: accept `KEEP_V1BETA` for scope-v0.1 or separately approve, implement, and validate a v1 candidate.
+2. Snapshot-limitation sign-off for OpenAI and Google: accept that no separately dated immutable identifier is documented and preserve requested/returned identity evidence.
+3. Returned-model-policy sign-off for OpenAI and Anthropic: accept the conservative exact-match policy despite the absence of a separate provider guarantee about response-string normalization.
+4. Anthropic live integration remains `PENDING_CREDENTIALS`. It must not be recorded as a provider/model failure.
+5. Before main collection, record and approve the actual organization/project retention posture for each provider. This operational attestation is separate from request-level storage fields.
+6. Explicitly resolve `MODEL_ROSTER_CONFIGURATIONS` and formal freeze acceptance only after the candidate records and evidence are internally consistent.
 
 `MODEL_ROSTER_CONFIGURATIONS` cannot yet be resolved.

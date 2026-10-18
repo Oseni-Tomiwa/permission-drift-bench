@@ -20,7 +20,7 @@ const common = {
 const inputs: Record<ScopeV01Provider, ModelConfigurationInput> = {
   openai: {
     identity: { provider: "openai", providerBackend: "OpenAI Responses API", apiSurface: "responses-v1", requestedModel: "gpt-6.1-sol", adapterName: "OpenAIResponsesAdapter", adapterVersion: "openai-responses-adapter-v0.3.0", sdkPackage: "openai", sdkVersion: "7.15.0" },
-    settings: { ...common, reasoning: value({ effort: "medium" }), thinkingMode: notApplicable(), parallelToolCalls: value(false), providerStorage: value(false), background: notApplicable(), continuationStrategy: value("LOCAL_STATELESS_TRANSCRIPT_RECONSTRUCTION"), streaming: value(false), endpoint: value("OPENAI_SDK_DEFAULT"), backendMode: value("RESPONSES_API"), apiVersion: notApplicable(), vertexBackend: notApplicable(), providerStateReplay: value("OUTPUT_ITEMS"), reasoningStateInclusion: value("reasoning.encrypted_content") },
+    settings: { ...common, reasoning: value({ effort: "medium" }), thinkingMode: notApplicable(), parallelToolCalls: value(false), providerStorage: value(false), background: omitted(), continuationStrategy: value("LOCAL_STATELESS_TRANSCRIPT_RECONSTRUCTION"), streaming: value(false), endpoint: value("OPENAI_SDK_DEFAULT"), backendMode: value("RESPONSES_API"), apiVersion: notApplicable(), vertexBackend: notApplicable(), providerStateReplay: value("OUTPUT_ITEMS"), reasoningStateInclusion: value("reasoning.encrypted_content") },
     returnedModelPolicy: "EXACT_REQUESTED_IF_PRESENT",
   },
   google: {
@@ -30,7 +30,7 @@ const inputs: Record<ScopeV01Provider, ModelConfigurationInput> = {
   },
   anthropic: {
     identity: { provider: "anthropic", providerBackend: "Anthropic Messages API", apiSurface: "messages-v1", requestedModel: "claude-sonnet-5-5", adapterName: "AnthropicMessagesAdapter", adapterVersion: "anthropic-messages-adapter-v0.2.0", sdkPackage: "@anthropic-ai/sdk", sdkVersion: "0.133.0" },
-    settings: { ...common, reasoning: value({ effort: "medium" }), thinkingMode: value("adaptive"), temperature: omitted("INCOMPATIBLE_WITH_FROZEN_CONFIGURATION"), topP: omitted("INCOMPATIBLE_WITH_FROZEN_CONFIGURATION"), seed: unavailable("UNSUPPORTED_BY_PROVIDER"), parallelToolCalls: value(false), providerStorage: unavailable("PROVIDER_CONTROLLED"), background: notApplicable(), continuationStrategy: value("LOCAL_FULL_MESSAGES_REPLAY"), streaming: value(true), endpoint: value("ANTHROPIC_SDK_DEFAULT"), backendMode: value("MESSAGES_API"), apiVersion: notApplicable(), vertexBackend: notApplicable(), providerStateReplay: value("THINKING_AND_REDACTED_THINKING_BLOCKS"), reasoningStateInclusion: notApplicable() },
+    settings: { ...common, snapshotVersion: value("claude-sonnet-5-5"), reasoning: value({ effort: "medium" }), thinkingMode: value("adaptive"), temperature: omitted("INCOMPATIBLE_WITH_FROZEN_CONFIGURATION"), topP: omitted("INCOMPATIBLE_WITH_FROZEN_CONFIGURATION"), seed: unavailable("UNSUPPORTED_BY_PROVIDER"), parallelToolCalls: value(false), providerStorage: unavailable("PROVIDER_CONTROLLED"), background: notApplicable(), continuationStrategy: value("LOCAL_FULL_MESSAGES_REPLAY"), streaming: value(true), endpoint: value("ANTHROPIC_SDK_DEFAULT"), backendMode: value("MESSAGES_API"), apiVersion: notApplicable(), vertexBackend: notApplicable(), providerStateReplay: value("THINKING_AND_REDACTED_THINKING_BLOCKS"), reasoningStateInclusion: notApplicable() },
     returnedModelPolicy: "EXACT_REQUESTED_IF_PRESENT",
   },
 };
@@ -74,10 +74,10 @@ export const SCOPE_V01_MODEL_ASYMMETRY_REGISTER = Object.freeze([
   asymmetry("toolChoice", "MATCHED", "All candidates use auto."),
   asymmetry("parallelToolCalls", "PROVIDER_UNAVAILABLE", "OpenAI and Anthropic suppress parallel calls; the Google Interactions path exposes no equivalent control."),
   asymmetry("storage", "PROVIDER_UNAVAILABLE", "OpenAI and Google send store false; Anthropic exposes no equivalent request field in this implementation."),
-  asymmetry("background", "NOT_APPLICABLE", "Google sends false; the other selected API surfaces do not use this field."),
+  asymmetry("background", "INTENTIONALLY_DIFFERENT", "Google sends false, OpenAI intentionally omits the supported control and remains foreground, and Anthropic Messages has no applicable background field."),
   asymmetry("continuationState", "INTENTIONALLY_DIFFERENT", "All continuation is client-managed, but provider reasoning/thought state formats differ."),
   asymmetry("automaticSdkRetries", "MATCHED", "All intended benchmark clients use zero automatic retries."),
-  asymmetry("modelSnapshotMutability", "AMBIGUOUS_REQUIRES_REVIEW", "No dated immutable snapshot is established from repository-local authoritative documentation."),
+  asymmetry("modelSnapshotMutability", "AMBIGUOUS_REQUIRES_REVIEW", "Anthropic's requested identifier is a documented pinned snapshot; OpenAI and Google have no separately documented dated immutable identifier."),
   asymmetry("returnedModelVerification", "INTENTIONALLY_DIFFERENT", "OpenAI and Anthropic require exact returned identity when present; Google is observed separately without inferred alias equivalence."),
 ]);
 export const SCOPE_V01_MODEL_LIVE_VALIDATION: Readonly<Record<ScopeV01Provider, LiveValidationStatus>> = Object.freeze({
