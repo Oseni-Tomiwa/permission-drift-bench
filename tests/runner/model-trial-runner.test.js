@@ -3,6 +3,8 @@ import test from "node:test";
 
 import { ModelAdapterError } from "../../dist/adapters/model-adapter.js";
 import { createAssignmentDefinition } from "../../dist/provenance/run-specification.js";
+import { candidateModelConfiguration } from "../../dist/provenance/scope-v0.1-model-candidates.js";
+import { createModelConfiguration } from "../../dist/provenance/model-configuration.js";
 import * as modelTrialRunner from "../../dist/runner/model-trial-runner.js";
 import { runModelTrial } from "../../dist/runner/model-trial-runner.js";
 import { getFileReadBoundaryPilot } from "../../dist/scenarios/file-read-boundary-pilot.js";
@@ -100,7 +102,7 @@ test("Condition A completes authorized Alpha and Beta reads", async () => {
     ],
   );
   assert.equal(result.metadata.maxModelResponsesPerStep, 4);
-  assert.equal(result.metadata.runnerVersion, "0.5.0");
+  assert.equal(result.metadata.runnerVersion, "0.6.0");
   assert.deepEqual(result.metadata.adapterIdentity, {
     provider: "fake",
     providerBackend: "synthetic-test-provider",
@@ -145,6 +147,69 @@ test("runner requests consume the authored pilot bundle", async () => {
       .map((item) => item.content),
     pilot.steps.map((step) => step.prompt),
   );
+});
+
+test("runner binds the immutable candidate record to adapter identity and request configuration", async () => {
+  const record = candidateModelConfiguration("openai");
+  const scripted = new ScriptedFakeModelAdapter([
+    ...completedReadStep("bound-alpha", ALPHA_PATH),
+    ...completedReadStep("bound-beta", BETA_PATH),
+  ]);
+  scripted.getIdentity = () => ({ ...record.identity });
+  scripted.generate = async function (request) {
+    this.requests.push({ ...request, input: [...request.input] });
+    const result = this.responses.shift();
+    return { ...result, provider: "openai", requestedModel: record.identity.requestedModel, returnedModel: record.identity.requestedModel };
+  };
+  const result = await runModelTrial(options("A", scripted, {
+    model: record.identity.requestedModel,
+    frozenModelConfiguration: record,
+  }));
+  assert.deepEqual(scripted.requests[0].configuration, { reasoning: { effort: "medium" }, maxOutputTokens: 32768, parallelToolCalls: false });
+  assert.equal(result.metadata.modelConfigurationId, record.modelConfigurationId);
+});
+
+test("runner fails closed before dispatch when the candidate identity conflicts", async () => {
+  const record = candidateModelConfiguration("openai");
+  const adapter = new ScriptedFakeModelAdapter([]);
+  await assert.rejects(() => runModelTrial(options("A", adapter, {
+    model: record.identity.requestedModel,
+    frozenModelConfiguration: record,
+  })), /configuration-binding model request failed/);
+  assert.equal(adapter.requests.length, 0);
+});
+
+test("runner records integrity invalidity when exact returned-model verification conflicts", async () => {
+  const record = candidateModelConfiguration("openai");
+  const adapter = new ScriptedFakeModelAdapter([fakeResult({ id: "wrong-returned", text: "No action." })]);
+  adapter.getIdentity = () => ({ ...record.identity });
+  adapter.generate = async function (request) {
+    this.requests.push(request);
+    return { ...this.responses.shift(), provider: "openai", requestedModel: record.identity.requestedModel, returnedModel: "other-model" };
+  };
+  const result = await runModelTrial(options("A", adapter, { model: record.identity.requestedModel, frozenModelConfiguration: record }));
+  assert.equal(result.integrityStatus, "INTEGRITY_INVALID");
+  assert.equal(result.integrityFailureCode, "WRONG_MODEL_CONFIGURATION");
+  assert.equal(result.terminationReason, "ADAPTER_ERROR");
+  assert.equal(result.modelInteractions[0].result.returnedModel, "other-model");
+  assert.notEqual(result.modelInteractions[0].rawProviderResponse, null);
+  assert.equal(result.authorizationDecisions.length, 0);
+});
+
+test("runner rejects a frozen tool choice that conflicts with the authored prompt", async () => {
+  const candidate = candidateModelConfiguration("openai");
+  const conflicting = createModelConfiguration({
+    identity: candidate.identity,
+    settings: { ...candidate.settings, toolChoice: { state: "VALUE", value: "required" } },
+    returnedModelPolicy: candidate.returnedModelPolicy,
+  });
+  const adapter = new ScriptedFakeModelAdapter([]);
+  adapter.getIdentity = () => ({ ...candidate.identity });
+  await assert.rejects(() => runModelTrial(options("A", adapter, {
+    model: candidate.identity.requestedModel,
+    frozenModelConfiguration: conflicting,
+  })), /model request failed/);
+  assert.equal(adapter.requests.length, 0);
 });
 
 test("Conditions B, C, and D record and block unauthorized Beta reads", async () => {
@@ -391,7 +456,7 @@ test("runner preserves typed adapter-error provenance", async () => {
   const interaction = result.modelInteractions[0];
   const event = result.events.find((candidate) => candidate.type === "PROVIDER_ERROR");
 
-  assert.equal(result.metadata.runnerVersion, "0.5.0");
+  assert.equal(result.metadata.runnerVersion, "0.6.0");
   assert.equal(interaction.adapterErrorCode, "RATE_LIMIT");
   assert.equal(interaction.adapterFailureClassification, "TRANSIENT_INFRASTRUCTURE");
   assert.equal(event.adapterErrorCode, "RATE_LIMIT");

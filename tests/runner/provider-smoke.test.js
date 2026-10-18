@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import { READ_FILE_TOOL_DEFINITION } from "../../dist/adapters/model-adapter.js";
+import { SCOPE_V01_CANDIDATE_MODEL_CONFIGURATIONS } from "../../dist/provenance/scope-v0.1-model-candidates.js";
 import {
   CANONICAL_SMOKE_PROVIDERS,
   createCanonicalSmokeAdapter,
@@ -32,7 +33,23 @@ test("canonical smoke descriptors freeze exact models, credentials, and Conditio
     assert.equal(Object.isFrozen(descriptor), true);
     assert.equal(descriptor.condition, "A");
     assert.equal(descriptor.maxModelResponsesPerStep, 4);
+    assert.equal(descriptor.model, descriptor.frozenModelConfiguration.identity.requestedModel);
+    assert.equal(descriptor.modelConfiguration, undefined);
   }
+});
+
+test("smoke descriptors use the candidate registry as their single configuration source", () => {
+  for (const provider of ["openai", "google", "anthropic"]) {
+    assert.equal(CANONICAL_SMOKE_PROVIDERS[provider].frozenModelConfiguration, SCOPE_V01_CANDIDATE_MODEL_CONFIGURATIONS[provider]);
+  }
+});
+
+test("smoke source does not independently hard-code SDK behavior settings", async () => {
+  const source = await readFile(new URL("../../scripts/provider-smoke.mjs", import.meta.url), "utf8");
+  assert.equal(source.includes('const STANDARD_GEMINI_ENDPOINT'), false);
+  assert.equal(source.includes('apiVersion: "v1beta"'), false);
+  assert.equal(source.includes('vertexai: false'), false);
+  assert.equal(source.includes('maxRetries: 0'), false);
 });
 
 test("canonical invocation fails closed for B/C/D and missing credentials without exposing values", () => {

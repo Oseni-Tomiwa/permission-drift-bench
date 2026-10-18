@@ -11,6 +11,11 @@ import { EventLog } from "../environment/event-log.js";
 import { SyntheticEnvironment } from "../environment/synthetic-environment.js";
 import { deriveTrialOutcome } from "../evaluator/trial-outcome.js";
 import type { TrialOutcome } from "../evaluator/trial-outcome.js";
+import {
+  bindModelConfiguration,
+  verifyReturnedModelBinding,
+} from "../provenance/model-configuration-binding.js";
+import type { ModelConfigurationRecord } from "../provenance/model-configuration.js";
 import { deriveAttemptPolicy } from "../evaluator/attempt-policy.js";
 import {
   derivePrimaryEndpointOutcome,
@@ -70,6 +75,7 @@ export interface ModelTrialOptions {
   readonly adapter: ModelAdapter;
   readonly model: string;
   readonly modelConfiguration?: Readonly<Record<string, unknown>>;
+  readonly frozenModelConfiguration?: ModelConfigurationRecord;
   readonly maxModelResponsesPerStep?: number;
   readonly integrityStatus?: IntegrityStatus;
   readonly integrityFailureCode?: IntegrityFailureCode | null;
@@ -119,11 +125,12 @@ export interface ModelSyntheticToolResult {
 
 export interface ModelTrialMetadata {
   readonly executionMode: "MODEL_PILOT";
-  readonly runnerVersion: "0.5.0";
+  readonly runnerVersion: "0.6.0";
   readonly pilotPromptVersion: typeof PILOT_PROMPT_VERSION;
   readonly adapterIdentity: ModelAdapterIdentity;
   readonly model: string;
   readonly modelConfiguration: Readonly<Record<string, unknown>>;
+  readonly modelConfigurationId: string | null;
   readonly scoredSteps: readonly number[];
   readonly maxModelResponsesPerStep: number;
   readonly responseCapRetryPolicy: ResponseCapRetryPolicy;
@@ -245,6 +252,25 @@ export async function runModelTrial(
   if (adapterIdentity.requestedModel !== options.model) {
     throw new Error("Adapter identity requested model does not match trial model");
   }
+  const frozenBinding = options.frozenModelConfiguration === undefined
+    ? null
+    : bindModelConfiguration(options.frozenModelConfiguration, adapterIdentity);
+  if (frozenBinding !== null && frozenBinding.model !== options.model) {
+    throw new Error("Frozen model configuration does not match trial model");
+  }
+  if (
+    frozenBinding !== null &&
+    (frozenBinding.toolChoice !== pilot.toolChoice ||
+      frozenBinding.responseCapPerStep !== maxModelResponsesPerStep)
+  ) {
+    throw new ModelAdapterError({
+      provider: adapterIdentity.provider,
+      errorCode: "UNSUPPORTED_CONFIGURATION",
+      terminationReason: "ADAPTER_ERROR",
+      failureClassification: "INTEGRITY_CORRUPTION",
+      integrityFailureCode: "WRONG_MODEL_CONFIGURATION",
+    });
+  }
   const initialPermissions = clonePermissions(condition.initialPermissions);
   const authorizationState: AuthorizationState = Object.freeze({
     permissions: initialPermissions,
@@ -300,7 +326,7 @@ export async function runModelTrial(
         input: snapshotInput(conversation),
         tools: pilot.tools,
         toolChoice: pilot.toolChoice,
-        configuration: Object.freeze({
+        configuration: frozenBinding?.requestConfiguration ?? Object.freeze({
           ...(options.modelConfiguration ?? {}),
         }),
       });
@@ -361,6 +387,87 @@ export async function runModelTrial(
             error instanceof ModelAdapterError
               ? error.failureClassification
               : null,
+          terminationReason,
+          authorizationStateReference,
+        });
+        break stepLoop;
+      }
+
+      let responseBindingError: ModelAdapterError | null = null;
+      if (options.frozenModelConfiguration !== undefined) {
+        try {
+          if (result.requestedModel !== options.model) {
+            throw new ModelAdapterError({
+              provider: adapterIdentity.provider,
+              errorCode: "UNSUPPORTED_CONFIGURATION",
+              terminationReason: "ADAPTER_ERROR",
+              failureClassification: "INTEGRITY_CORRUPTION",
+              integrityFailureCode: "WRONG_MODEL_CONFIGURATION",
+            });
+          }
+          verifyReturnedModelBinding(
+            options.frozenModelConfiguration,
+            result.returnedModel,
+          );
+        } catch (error) {
+          responseBindingError = error instanceof ModelAdapterError
+            ? error
+            : new ModelAdapterError({
+              provider: adapterIdentity.provider,
+              errorCode: "UNSUPPORTED_CONFIGURATION",
+              terminationReason: "ADAPTER_ERROR",
+              failureClassification: "INTEGRITY_CORRUPTION",
+              integrityFailureCode: "WRONG_MODEL_CONFIGURATION",
+              cause: error,
+            });
+        }
+      }
+
+      if (responseBindingError !== null) {
+        providerError = safeAdapterError(responseBindingError);
+        terminalAdapterErrorCode = responseBindingError.errorCode;
+        terminationReason = responseBindingError.terminationReason;
+        integrityStatus = "INTEGRITY_INVALID";
+        integrityFailureCode =
+          responseBindingError.integrityFailureCode ??
+          "WRONG_MODEL_CONFIGURATION";
+        const modelInteractionIndex = modelInteractions.length;
+        modelInteractions.push(Object.freeze({
+          invocationId,
+          step: presentation.step,
+          responseIndexWithinStep,
+          request,
+          result,
+          rawProviderResponse: result.rawResponse,
+          responseId: result.responseId,
+          toolCallCorrelations: Object.freeze([]),
+          error: providerError,
+          adapterErrorCode: responseBindingError.errorCode,
+          adapterFailureClassification:
+            responseBindingError.failureClassification,
+        }));
+        eventLog.append({
+          type: "MODEL_RESPONSE_RECEIVED",
+          step: presentation.step,
+          invocationId,
+          modelInteractionIndex,
+          responseId: result.responseId,
+          status: result.status,
+          toolCallCount: result.toolCalls.length,
+          assistantTextPresent: result.assistantText !== null,
+          authorizationStateReference,
+        });
+        eventLog.append({
+          type: "PROVIDER_ERROR",
+          step: presentation.step,
+          invocationId,
+          modelInteractionIndex,
+          responseId: result.responseId,
+          status: result.status,
+          message: providerError,
+          adapterErrorCode: responseBindingError.errorCode,
+          failureClassification:
+            responseBindingError.failureClassification,
           terminationReason,
           authorizationStateReference,
         });
@@ -586,13 +693,15 @@ export async function runModelTrial(
     initialPermissions,
     metadata: Object.freeze({
       executionMode: "MODEL_PILOT",
-      runnerVersion: "0.5.0",
+      runnerVersion: "0.6.0",
       pilotPromptVersion: pilot.version,
       adapterIdentity,
       model: options.model,
-      modelConfiguration: Object.freeze({
+      modelConfiguration: frozenBinding?.requestConfiguration ?? Object.freeze({
         ...(options.modelConfiguration ?? {}),
       }),
+      modelConfigurationId:
+        options.frozenModelConfiguration?.modelConfigurationId ?? null,
       scoredSteps: Object.freeze([...condition.scoredSteps]),
       maxModelResponsesPerStep,
       responseCapRetryPolicy,

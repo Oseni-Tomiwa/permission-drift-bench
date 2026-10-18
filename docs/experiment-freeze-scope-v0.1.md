@@ -137,24 +137,40 @@ No direction or nonzero value is assumed for either contrast. Condition A is eva
 
 ## 7. Model Configuration Freeze
 
-**Unresolved — sign-off required:** Before any main trial, create an immutable configuration record for every evaluated model/configuration. The intended candidate roster is OpenAI `gpt-6.1-sol`, Google `gemini-3.8-flash`, and Anthropic `claude-sonnet-5-5`. OpenAI and Google have completed Condition-A live pilot integration checks; Anthropic validation remains pending because credentials are unavailable. These are engineering-only **Pilot context — not for analysis** facts and do not resolve the roster or justify removing Anthropic. The record must freeze or explicitly mark unavailable each of the following:
+**Unresolved — sign-off required:** The intended candidate roster is OpenAI `gpt-6.1-sol`, Google `gemini-3.8-flash`, and Anthropic `claude-sonnet-5-5`. Exact immutable `model-configuration-v0.2` candidate records now exist for all three under `canonical-json-v0.1` and SHA-256. They capture provider/backend/API, requested model, adapter and SDK identity, behaviorally relevant settings, continuation strategy, retry control, and returned-model verification policy. The provider-asymmetry register records controls that are matched, intentionally different, unavailable, not applicable, or still ambiguous. Preparing these records does not formally select or freeze the roster.
 
-- [ ] provider;
-- [ ] exact model identifier;
-- [ ] model or version snapshot, release, or revision if exposed;
-- [ ] temperature, if supported;
-- [ ] `top_p`, if supported;
-- [ ] reasoning setting or effort, if supported;
-- [ ] maximum output tokens, if supported;
+**Pilot context — not for analysis:** OpenAI and Google have completed Condition-A live pilot integration checks; Anthropic validation remains `PENDING_CREDENTIALS`. Live-validation status is deliberately separate from content-addressed model identity. These engineering facts do not resolve the roster, justify removing Anthropic, or constitute benchmark evidence.
+
+Candidate configuration identities are:
+
+| Provider | Candidate model | Candidate configuration ID |
+| --- | --- | --- |
+| OpenAI | `gpt-6.1-sol` | `model-configuration-v0.2:sha256:75fcb2b1519e0d81d7729203f011e8a95f85f1f762bc301e37e58fcf3cbc338a` |
+| Google | `gemini-3.8-flash` | `model-configuration-v0.2:sha256:ac2644e52d180fac8e143c51465423e559bdc75f0d8ac74295697cd0bcd086f5` |
+| Anthropic | `claude-sonnet-5-5` | `model-configuration-v0.2:sha256:eae7b81b309ba2c5dbd230c239cfe81bcf9b613d3dffab4488cff4165c206d1b` |
+
+The records freeze or explicitly classify each of the following:
+
+- [x] provider, backend, and API surface;
+- [x] exact requested model identifier;
+- [x] model snapshot/version as unavailable where not exposed;
+- [x] temperature and `top_p` as intentionally omitted or incompatible where applicable;
+- [x] reasoning/thinking setting;
+- [x] maximum output tokens;
 - [x] tool choice as supplied by the canonical authored bundle;
-- [ ] parallel tool-call behavior and any provider control for it;
+- [x] parallel tool-call behavior and provider unavailability where no equivalent control exists;
 - [x] maximum model responses per step, currently configured as `4`, subject to explicit acceptance in the final configuration record;
 - [x] system prompt through prompt-version/hash provenance;
 - [x] tool schema through prompt-version/hash provenance;
-- [ ] seed or determinism setting, if supported; and
-- [ ] any provider-specific setting that can materially affect tool behavior.
+- [x] seed/determinism setting as omitted or unavailable;
+- [x] continuation and provider-state replay strategy;
+- [x] request-level storage/background controls where supported;
+- [x] automatic SDK retry setting; and
+- [x] provider-specific settings currently known to materially affect the benchmark path.
 
-Unsupported settings must be recorded as `UNSUPPORTED` or `UNAVAILABLE`, not silently assigned an invented default. Provider defaults that cannot be fixed must be identified as provider-controlled.
+Unsupported settings are represented explicitly rather than assigned invented defaults. Provider defaults that cannot be fixed are identified as provider-controlled. Google returned-model metadata is preserved under `OBSERVE_SEPARATELY`; no alias equivalence is inferred. OpenAI and Anthropic use `EXACT_REQUESTED_IF_PRESENT`, while absence of an optional returned-model field is not itself an integrity failure.
+
+**Unresolved — sign-off required:** Authoritative external verification of provider model-name mutability, dated/snapshot identifier availability, API stability, and provider-wide retention policy remains pending. No candidate identifier will be replaced without approval. `MODEL_ROSTER_CONFIGURATIONS` remains `UNRESOLVED` until required validation and explicit sign-off are complete.
 
 ## 8. Repetition and Sample-Size Decision
 

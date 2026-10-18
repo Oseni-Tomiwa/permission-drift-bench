@@ -9,21 +9,43 @@ import {
 } from "../../dist/provenance/run-specification.js";
 
 export const modelConfigurationInput = (settings = {}) => ({
-  provider: "openai",
-  modelIdentifier: "model-snapshot-test",
+  identity: {
+    provider: "openai",
+    providerBackend: "OpenAI Responses API",
+    apiSurface: "responses-v1",
+    requestedModel: "model-snapshot-test",
+    adapterName: "OpenAIResponsesAdapter",
+    adapterVersion: "openai-responses-adapter-v0.3.0",
+    sdkPackage: "openai",
+    sdkVersion: "7.15.0",
+  },
   settings: {
     snapshotVersion: { state: "UNAVAILABLE", reasonCode: "NOT_EXPOSED_BY_API" },
     reasoning: { state: "VALUE", value: "medium" },
-    temperature: { state: "UNAVAILABLE", reasonCode: "UNSUPPORTED_BY_PROVIDER" },
-    topP: { state: "UNAVAILABLE", reasonCode: "UNSUPPORTED_BY_PROVIDER" },
+    thinkingMode: { state: "NOT_APPLICABLE" },
+    temperature: { state: "OMITTED", reasonCode: "INTENTIONALLY_OMITTED" },
+    topP: { state: "OMITTED", reasonCode: "INTENTIONALLY_OMITTED" },
     outputTokenLimit: { state: "VALUE", value: 800 },
-    seed: { state: "UNAVAILABLE", reasonCode: "UNSUPPORTED_BY_PROVIDER" },
+    seed: { state: "OMITTED", reasonCode: "INTENTIONALLY_OMITTED" },
+    toolChoice: { state: "VALUE", value: "auto" },
     parallelToolCalls: { state: "VALUE", value: false },
     providerStorage: { state: "VALUE", value: false },
+    background: { state: "NOT_APPLICABLE" },
     providerSession: { state: "VALUE", value: "NONE" },
+    continuationStrategy: { state: "VALUE", value: "LOCAL_TRANSCRIPT_REPLAY" },
+    providerAddressableContinuationId: { state: "OMITTED", reasonCode: "INTENTIONALLY_OMITTED" },
+    automaticSdkRetries: { state: "VALUE", value: 0 },
     responseCapPerStep: { state: "VALUE", value: 4 },
+    streaming: { state: "VALUE", value: false },
+    endpoint: { state: "VALUE", value: "OPENAI_SDK_DEFAULT" },
+    backendMode: { state: "VALUE", value: "RESPONSES_API" },
+    apiVersion: { state: "NOT_APPLICABLE" },
+    vertexBackend: { state: "NOT_APPLICABLE" },
+    providerStateReplay: { state: "VALUE", value: "OUTPUT_ITEMS" },
+    reasoningStateInclusion: { state: "VALUE", value: "reasoning.encrypted_content" },
     ...settings,
   },
+  returnedModelPolicy: "EXACT_REQUESTED_IF_PRESENT",
 });
 
 export const resolvedFreezeDecisions = (overrides = {}) => {

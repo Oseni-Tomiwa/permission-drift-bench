@@ -1,40 +1,24 @@
-const EXACT_CONDITION = "A";
-const STANDARD_GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/";
+import { pathToFileURL } from "node:url";
+import { bindModelConfiguration, deriveSdkClientConfiguration } from "../dist/provenance/model-configuration-binding.js";
+import { SCOPE_V01_CANDIDATE_MODEL_CONFIGURATIONS } from "../dist/provenance/scope-v0.1-model-candidates.js";
 
-const descriptor = (value) => Object.freeze({
-  ...value,
-  condition: EXACT_CONDITION,
-  maxModelResponsesPerStep: 4,
-  modelConfiguration: Object.freeze(value.modelConfiguration),
-});
+const EXACT_CONDITION = "A";
+
+const descriptor = (provider, credentialEnvironmentVariable) => {
+  const frozenModelConfiguration = SCOPE_V01_CANDIDATE_MODEL_CONFIGURATIONS[provider];
+  return Object.freeze({
+    model: frozenModelConfiguration.identity.requestedModel,
+    credentialEnvironmentVariable,
+    frozenModelConfiguration,
+    condition: EXACT_CONDITION,
+    maxModelResponsesPerStep: frozenModelConfiguration.settings.responseCapPerStep.value,
+  });
+};
 
 export const CANONICAL_SMOKE_PROVIDERS = Object.freeze({
-  openai: descriptor({
-    model: "gpt-6.1-sol",
-    credentialEnvironmentVariable: "OPENAI_API_KEY",
-    modelConfiguration: {
-      reasoning: Object.freeze({ effort: "medium" }),
-      maxOutputTokens: 32768,
-      parallelToolCalls: false,
-    },
-  }),
-  anthropic: descriptor({
-    model: "claude-sonnet-5-5",
-    credentialEnvironmentVariable: "ANTHROPIC_API_KEY",
-    modelConfiguration: {
-      reasoning: Object.freeze({ effort: "medium" }),
-      maxOutputTokens: 32768,
-      parallelToolCalls: false,
-    },
-  }),
-  google: descriptor({
-    model: "gemini-3.8-flash",
-    credentialEnvironmentVariable: "GOOGLE_API_KEY",
-    modelConfiguration: {
-      reasoning: Object.freeze({ effort: "medium" }),
-      maxOutputTokens: 32768,
-    },
-  }),
+  openai: descriptor("openai", "OPENAI_API_KEY"),
+  google: descriptor("google", "GOOGLE_API_KEY"),
+  anthropic: descriptor("anthropic", "ANTHROPIC_API_KEY"),
 });
 
 export function validateCanonicalSmokeInvocation(provider, condition, environment) {
@@ -68,36 +52,42 @@ export async function createCanonicalSmokeAdapter(
   const selected = CANONICAL_SMOKE_PROVIDERS[provider];
   if (selected === undefined) throw new Error("Unsupported canonical smoke provider.");
   const sdk = await loadModule(provider, suppliedModules);
+  const sdkClientConfiguration = deriveSdkClientConfiguration(selected.frozenModelConfiguration);
 
   if (provider === "openai") {
     const [{ OpenAIResponsesAdapter }, OpenAI] = await Promise.all([
       import("../dist/adapters/openai-responses-adapter.js"),
       Promise.resolve(sdk.default),
     ]);
-    const client = new OpenAI({ apiKey, maxRetries: 0 });
-    return Object.freeze({ adapter: new OpenAIResponsesAdapter(client), model: selected.model, modelConfiguration: selected.modelConfiguration });
+    const client = new OpenAI({ apiKey, ...sdkClientConfiguration });
+    const adapter = new OpenAIResponsesAdapter(client);
+    const binding = bindModelConfiguration(selected.frozenModelConfiguration, adapter.getIdentity(selected.model));
+    return Object.freeze({ adapter, model: binding.model, modelConfiguration: binding.requestConfiguration, frozenModelConfiguration: selected.frozenModelConfiguration });
   }
   if (provider === "anthropic") {
     const [{ AnthropicMessagesAdapter }, Anthropic] = await Promise.all([
       import("../dist/adapters/anthropic-messages-adapter.js"),
       Promise.resolve(sdk.default),
     ]);
-    const client = new Anthropic({ apiKey, maxRetries: 0 });
-    return Object.freeze({ adapter: new AnthropicMessagesAdapter(client), model: selected.model, modelConfiguration: selected.modelConfiguration });
+    const client = new Anthropic({ apiKey, ...sdkClientConfiguration });
+    const adapter = new AnthropicMessagesAdapter(client);
+    const binding = bindModelConfiguration(selected.frozenModelConfiguration, adapter.getIdentity(selected.model));
+    return Object.freeze({ adapter, model: binding.model, modelConfiguration: binding.requestConfiguration, frozenModelConfiguration: selected.frozenModelConfiguration });
   }
 
   const { GoogleInteractionsAdapter } = await import("../dist/adapters/google-interactions-adapter.js");
   const client = new sdk.GoogleGenAI({
     apiKey,
-    vertexai: false,
-    apiVersion: "v1beta",
-    httpOptions: { baseUrl: STANDARD_GEMINI_ENDPOINT },
+    vertexai: sdkClientConfiguration.vertexai,
+    apiVersion: sdkClientConfiguration.apiVersion,
+    httpOptions: { baseUrl: sdkClientConfiguration.baseUrl },
   });
-  return Object.freeze({
-    adapter: new GoogleInteractionsAdapter(client, Object.freeze({ maxRetries: 0 })),
-    model: selected.model,
-    modelConfiguration: selected.modelConfiguration,
-  });
+  const adapter = new GoogleInteractionsAdapter(
+    client,
+    Object.freeze({ maxRetries: sdkClientConfiguration.maxRetries }),
+  );
+  const binding = bindModelConfiguration(selected.frozenModelConfiguration, adapter.getIdentity(selected.model));
+  return Object.freeze({ adapter, model: binding.model, modelConfiguration: binding.requestConfiguration, frozenModelConfiguration: selected.frozenModelConfiguration });
 }
 
 async function main() {
@@ -130,7 +120,7 @@ async function main() {
       replacementForAttemptId: null,
       adapter: adapterSetup.adapter,
       model: adapterSetup.model,
-      modelConfiguration: adapterSetup.modelConfiguration,
+      frozenModelConfiguration: adapterSetup.frozenModelConfiguration,
       maxModelResponsesPerStep: validated.descriptor.maxModelResponsesPerStep,
     });
     const emitted = await trace.emitPilotArtifacts(result, summary.formatPilotSummary(result));
@@ -144,5 +134,4 @@ async function main() {
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await main();
 }
-import { pathToFileURL } from "node:url";
 

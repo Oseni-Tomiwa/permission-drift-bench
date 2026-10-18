@@ -33,7 +33,10 @@ const promptReferences = Object.freeze(Object.fromEntries(
 
 const model = (modelIdentifier) => createModelConfiguration({
   ...modelConfigurationInput(),
-  modelIdentifier,
+  identity: {
+    ...modelConfigurationInput().identity,
+    requestedModel: modelIdentifier,
+  },
 });
 
 const assignmentsFor = (...models) => createScopeV01AssignmentDefinitions({
